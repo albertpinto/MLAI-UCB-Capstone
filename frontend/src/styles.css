@@ -2,28 +2,36 @@
 
 /* Colour tokens switch with the OS theme; Tailwind classes such as bg-panel use them. */
 :root {
-  --bg: #f4f6f9; --panel: #fff; --text: #1a2230; --muted: #667085; --line: #e3e7ee;
-  --accent: #1d4ed8; --accent-soft: #e8efff; --nav: #0f1b2d; --ok: #187a3e; --bad: #b3261e;
+  --bg: #f5f6fb; --panel: #fff; --text: #0f172a; --muted: #64748b; --line: #e4e7f1;
+  --accent: #4f46e5; --accent2: #7c3aed; --accent-soft: #eef0ff; --code: #0f1226; --ok: #15803d; --bad: #b91c1c;
+  --shadow: 0 1px 2px rgb(15 23 42 / .04), 0 4px 16px rgb(15 23 42 / .06);
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #0d1117; --panel: #161b22; --text: #e6edf3; --muted: #8b98a9; --line: #2a313c; --accent: #6ea0ff; --accent-soft: #1b2a47; --nav: #0a0f16; --ok: #4cc27a; --bad: #f2877f; }
+  :root {
+    --bg: #0b0e1c; --panel: #131730; --text: #e8eaf6; --muted: #98a2c3; --line: #252b4d;
+    --accent: #8b8cf8; --accent2: #a78bfa; --accent-soft: #1d2250; --code: #080a16; --ok: #4ade80; --bad: #f87171;
+    --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 4px 16px rgb(0 0 0 / .25);
+  }
 }
 @theme inline {
   --color-bg: var(--bg); --color-panel: var(--panel); --color-ink: var(--text); --color-muted: var(--muted);
-  --color-line: var(--line); --color-accent: var(--accent); --color-soft: var(--accent-soft);
-  --color-nav: var(--nav); --color-ok: var(--ok); --color-bad: var(--bad);
+  --color-line: var(--line); --color-accent: var(--accent); --color-accent2: var(--accent2); --color-soft: var(--accent-soft);
+  --color-code: var(--code); --color-ok: var(--ok); --color-bad: var(--bad);
+  --shadow-card: var(--shadow);
 }
 
-body { @apply bg-bg text-ink antialiased; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { @apply bg-bg text-ink antialiased; font: 15px/1.6 "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif; }
+h1, h2, h3 { letter-spacing: -0.015em; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input:focus-visible, textarea:focus-visible { outline: none; }  /* fields show a ring instead, see .field */
 
 /* reusable pieces, so the pages stay readable */
 @layer components {
-  .field { @apply w-full rounded-lg border border-line bg-panel px-3 py-2.5 text-ink focus:border-accent; }
-  .btn { @apply cursor-pointer rounded-lg bg-accent px-4 py-2.5 font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-50; }
+  .field { @apply w-full rounded-xl border border-line bg-panel px-3.5 py-2.5 text-ink shadow-sm transition focus:border-accent focus:ring-4 focus:ring-accent/15; }
+  .btn { @apply cursor-pointer rounded-lg bg-linear-to-r from-indigo-600 to-violet-600 px-4 py-2.5 font-medium text-white shadow-sm transition hover:brightness-110 disabled:cursor-default disabled:opacity-50; }
   .linkbtn { @apply cursor-pointer px-1.5 text-accent underline hover:no-underline; }
-  .card { @apply my-3 rounded-xl border border-line bg-panel p-4 shadow-sm; }
+  .card { @apply my-3 rounded-2xl border border-line bg-panel p-5 shadow-card; }
   .hint { @apply text-sm text-muted; }
   .badge { @apply rounded-full border border-line px-2.5 py-0.5 text-xs uppercase tracking-wider text-muted; }
   .chip { @apply mr-1.5 inline-block rounded-full border border-line bg-bg px-2.5 text-xs; }

@@ -61,7 +61,8 @@ def answer_question(llm, query: str, results: list[dict], min_score: float) -> d
     Abstains without calling the LLM when nothing relevant was retrieved. Returns
     {"answer", "abstained", "sources", "matches"}. Sources are the passages the answer cites, numbered as in the answer.
     Matches are the retrieved passages (at most MAX_MATCHES), numbered as in the answer, each rewritten as a readable
-    answer and flagged `cited` if the answer used it. They come from a second LLM call that runs alongside the first;
+    answer and flagged `cited` if the answer used it. A cited passage always has a match, with its original `text` if
+    it could not be rewritten. They come from a second LLM call that runs alongside the first;
     if it fails the answer is still returned, with no matches.
     """
     passages = [r for r in results if r["score"] >= min_score]
@@ -79,8 +80,11 @@ def answer_question(llm, query: str, results: list[dict], min_score: float) -> d
             readable = {}
 
     cited = {s["n"] for s in result["sources"]}
+    # every cited passage gets a card, so each [n] in the answer has something to open; one the rewrite call
+    # dropped has no readable answer, so its original text is sent instead
     result["matches"] = [
-        {"n": n, "answer": readable[n], "cited": n in cited, **{k: passages[n - 1].get(k) for k in SOURCE_KEYS if k != "text"}}
-        for n in sorted(readable)
+        {"n": n, "answer": readable.get(n), "cited": n in cited, **{k: passages[n - 1].get(k) for k in SOURCE_KEYS if k != "text" or n not in readable}}
+        for n in range(1, len(passages) + 1)
+        if n in readable or n in cited
     ][:MAX_MATCHES]
     return result

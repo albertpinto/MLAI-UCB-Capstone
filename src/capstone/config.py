@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     embed_device: str = ""  # "" = auto (GPU if available), or "cpu" / "cuda"
     embed_threads: int = 4  # CPU threads torch may use; the default is every core, which can overload the machine
     company_name: str = "Bakasura"
-    company_tagline: str = "Knowledge base"
+    company_tagline: str = "Ask your documents anything"
     logo_url: str = "/logo.svg"  # a URL, or a file in frontend/public such as /logo.png; "" shows the first letter instead
     docs_dir: Path = Path("data/docs")
     suggested_questions_file: Path = Path("data/suggested_questions.json")  # pick list shown on the Ask page

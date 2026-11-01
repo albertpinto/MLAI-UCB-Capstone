@@ -83,7 +83,8 @@ def test_matches_are_readable_rewrites_flagged_when_cited():
     )
     passages = [passage(0.9, "one"), passage(0.8, "two", "Doc B"), passage(0.7, "three"), passage(0.6, "four")]
     matches = answer_question(llm, "q", passages, 0.25)["matches"]
-    assert [(m["n"], m["answer"], m["cited"]) for m in matches] == [(1, "Readable one.", True), (2, "Readable two.", False)]
+    assert [(m["n"], m["answer"], m["cited"]) for m in matches] == [(1, "Readable one.", True), (2, "Readable two.", False), (3, None, True)]
+    assert "text" not in matches[0] and matches[2]["text"] == "three"  # cited but not rewritten: the original text stands in
     assert matches[1]["citation"] == "Doc B" and "text" not in matches[1]  # the original text stays behind the passage link
 
 
@@ -96,4 +97,5 @@ def test_matches_are_capped_at_ten():
 def test_a_failed_matches_call_still_returns_the_answer():
     llm = RoutedLLM({"answer": "Do X [1].", "sources": [1]}, RuntimeError("rate limited"))
     result = answer_question(llm, "q", [passage(0.9), passage(0.8)], 0.25)
-    assert result["answer"] == "Do X [1]." and result["matches"] == []
+    assert result["answer"] == "Do X [1]." and [m["n"] for m in result["matches"]] == [1]  # the cited passage still has a card
+    assert result["matches"][0]["answer"] is None and result["matches"][0]["text"]

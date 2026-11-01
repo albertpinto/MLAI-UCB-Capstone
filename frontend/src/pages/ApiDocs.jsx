@@ -52,7 +52,7 @@ function CodeBlock({ text }) {
   const copy = () => navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
   return (
     <div className="relative">
-      <pre className="overflow-x-auto rounded-lg bg-nav p-3 pr-16 text-xs leading-relaxed text-slate-200">{text}</pre>
+      <pre className="overflow-x-auto rounded-lg bg-code p-3 pr-16 text-xs leading-relaxed text-slate-200">{text}</pre>
       <button onClick={copy} className="absolute right-2 top-2 rounded bg-white/10 px-2 py-1 text-xs text-slate-200 hover:bg-white/20">{copied ? "Copied" : "Copy"}</button>
     </div>
   );
@@ -112,20 +112,23 @@ export default function ApiDocs() {
   const groups = TAG_ORDER.map((tag) => [tag, ops.filter((o) => o.op.tags?.[0] === tag)]).filter(([, list]) => list.length);
 
   return (
-    <>
+    <div className="mx-auto max-w-4xl">
       <h1 className="text-2xl font-semibold tracking-tight">API reference</h1>
       <p className="hint mb-4 mt-1">{spec.info.description} Base URL: <code>{API}</code> · version {spec.info.version}</p>
       <div className="mb-2 flex flex-wrap gap-2">
         <input className="field flex-1" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter endpoints, e.g. search or upload" />
         <a className="btn inline-block no-underline" href={`${API}/docs`} target="_blank" rel="noreferrer">Try it in Swagger ↗</a>
       </div>
+      <nav className="mb-1 mt-3 flex flex-wrap gap-2 text-sm" aria-label="Sections">
+        {groups.map(([tag]) => <a key={tag} href={`#tag-${tag}`} className="rounded-full border border-line bg-panel px-3 py-1 text-muted transition hover:border-accent hover:text-accent">{tag}</a>)}
+      </nav>
       {groups.length === 0 && <p className="hint">No endpoints match.</p>}
       {groups.map(([tag, list]) => (
-        <section key={tag}>
-          <h2 className="mb-1 mt-7 text-lg font-semibold">{tag}</h2>
+        <section key={tag} id={`tag-${tag}`} className="scroll-mt-24">
+          <h2 className="mb-1 mt-7 text-lg font-semibold">{tag} <span className="text-sm font-normal text-muted">{list.length} endpoint{list.length === 1 ? "" : "s"}</span></h2>
           {list.map((o) => <Endpoint key={o.method + o.path} {...o} spec={spec} />)}
         </section>
       ))}
-    </>
+    </div>
   );
 }

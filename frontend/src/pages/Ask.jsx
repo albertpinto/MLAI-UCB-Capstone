@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ArrowRight, Check, Clock, Copy, Info, Loader2, Search, Sparkles } from "lucide-react";
 import { ask as askApi, getSuggestions, search } from "../api.js";
 
 const TYPES = [
@@ -8,35 +9,52 @@ const TYPES = [
   ["summary", "Summaries"],
   ["topic", "Topics"],
 ];
+const STEPS = ["Searching the documents", "Reading the matching sections", "Writing the answer"];
 
 export default function Ask() {
-  const [query, setQuery] = useState("");
+  const [params, setParams] = useSearchParams();
+  const urlQuery = params.get("q") ?? "";
+  const [query, setQuery] = useState(urlQuery);
   const [types, setTypes] = useState([]);
-  const [data, setData] = useState(null);
-  const [grounded, setGrounded] = useState(null);
-  const [answerError, setAnswerError] = useState("");
+  const [result, setResult] = useState(null); // { q, data, grounded, answerError }
   const [history, setHistory] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState(0);
   const [suggestions, setSuggestions] = useState([]);
+  const [active, setActive] = useState(null); // the source card a citation just pointed at
+  const ran = useRef("");
 
   useEffect(() => { getSuggestions().then((d) => setSuggestions(d.suggestions)).catch(() => {}); }, []);
 
-  const toggle = (t) => setTypes((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
+  // the question lives in the URL (?q=...), so it can be bookmarked, shared and reloaded
+  useEffect(() => {
+    if (urlQuery && urlQuery !== ran.current) { ran.current = urlQuery; setQuery(urlQuery); run(urlQuery); }
+  }, [urlQuery]);
 
-  async function ask(q = query) {
+  // purely visual progress while the request runs
+  useEffect(() => {
+    if (!busy) return;
+    setStep(0);
+    const timer = setInterval(() => setStep((s) => Math.min(s + 1, STEPS.length - 1)), 1800);
+    return () => clearInterval(timer);
+  }, [busy]);
+
+  const toggle = (t) => setTypes((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
+  const submit = (q) => {
     if (!q.trim()) return;
-    setQuery(q);
+    if (q === urlQuery) { ran.current = q; run(q); } else setParams({ q });
+  };
+
+  async function run(q) {
     setBusy(true);
     setError("");
     try {
       // the grounded answer and the plain results are independent: results still show if the LLM call fails
       const [found, answer] = await Promise.allSettled([search(q, types), askApi(q, types)]);
       if (found.status === "rejected") throw found.reason;
-      setData(found.value);
-      setGrounded(answer.status === "fulfilled" ? answer.value : null);
-      setAnswerError(answer.status === "rejected" ? answer.reason.message : "");
-      setHistory((h) => [q, ...h.filter((x) => x !== q)].slice(0, 8));
+      setResult({ q, data: found.value, grounded: answer.status === "fulfilled" ? answer.value : null, answerError: answer.status === "rejected" ? answer.reason.message : "" });
+      setHistory((h) => [q, ...h.filter((x) => x !== q)].slice(0, 6));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -44,104 +62,152 @@ export default function Ask() {
     }
   }
 
-  // the best answer is also results[0]; show it once
-  // With a grounded answer the matches are the LLM's readable rewrites; if that failed, fall back to the raw results
-  const shown = data?.answer ? [data.answer] : [];
-  const others = grounded ? grounded.matches ?? [] : data ? data.results.filter((r) => !shown.some((s) => s.text === r.text)) : [];
+  function goToSource(n) {
+    setActive(n);
+    document.getElementById(`match-${n}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => setActive(null), 1600);
+  }
+
+  const { data, grounded, answerError } = result ?? {};
+  // with a grounded answer the sources are the LLM's readable rewrites; if that failed, fall back to the raw results
+  const sources = grounded ? grounded.matches ?? [] : data?.results ?? [];
+  const showHero = !result && !busy;
 
   return (
-    <>
-      <form onSubmit={(e) => { e.preventDefault(); ask(); }} className="mb-2 flex gap-2">
-        <input className="field" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ask a question, e.g. What are the fundamental rights of a citizen?" autoFocus />
-        <button className="btn" disabled={busy}>{busy ? "Searching…" : "Search"}</button>
-      </form>
-      <div className="mb-2 flex flex-wrap gap-4 text-sm text-muted">
-        {TYPES.map(([t, label]) => (
-          <label key={t}><input type="checkbox" checked={types.includes(t)} onChange={() => toggle(t)} /> {label}</label>
-        ))}
+    <div>
+      <div className={`mx-auto max-w-3xl text-center ${showHero ? "pt-6 md:pt-12" : ""}`}>
+        {showHero && (
+          <>
+            <span className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl bg-linear-to-br from-indigo-600 to-violet-600 text-white shadow-card"><Sparkles size={22} /></span>
+            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">What would you like to know?</h1>
+            <p className="mx-auto mt-2 max-w-xl text-muted">Ask in everyday language. Answers come only from your documents, with citations you can open.</p>
+          </>
+        )}
+        <form onSubmit={(e) => { e.preventDefault(); submit(query); }} className={`flex gap-2 text-left ${showHero ? "mt-7" : ""}`}>
+          <div className="relative flex-1">
+            <Search size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted" />
+            <input className="field !rounded-2xl !py-3.5 !pl-11 text-base" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. What are the fundamental rights of a citizen?" autoFocus aria-label="Your question" />
+          </div>
+          <button className="btn !rounded-2xl !px-6" disabled={busy}>{busy ? "Asking…" : "Ask"}</button>
+        </form>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-sm" role="group" aria-label="Search in">
+          <span className="text-muted">Search in</span>
+          <Chip active={types.length === 0} onClick={() => setTypes([])}>Everything</Chip>
+          {TYPES.map(([t, label]) => <Chip key={t} active={types.includes(t)} onClick={() => toggle(t)}>{label}</Chip>)}
+        </div>
+        {history.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-sm">
+            <Clock size={14} className="text-muted" />
+            {history.map((h) => <button key={h} onClick={() => submit(h)} className="max-w-[16rem] truncate rounded-full border border-line bg-panel px-3 py-1 text-muted transition hover:border-accent hover:text-accent">{h}</button>)}
+          </div>
+        )}
       </div>
-      {suggestions.length > 0 && (
-        <details className={data ? "mb-3" : "my-4"} open={!data}>
-          <summary className="cursor-pointer text-sm font-medium text-muted">Suggested questions</summary>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+
+      {error && <p className="mx-auto mt-6 max-w-3xl rounded-xl border border-bad/30 bg-bad/10 p-3 text-bad" role="alert">{error}</p>}
+
+      {busy && (
+        <ol className="mx-auto mt-8 flex max-w-3xl flex-wrap justify-center gap-x-6 gap-y-2 text-sm" aria-live="polite">
+          {STEPS.map((label, i) => (
+            <li key={label} className={`flex items-center gap-2 ${i <= step ? "text-ink" : "text-muted/60"}`}>
+              {i < step ? <Check size={16} className="text-ok" /> : i === step ? <Loader2 size={16} className="animate-spin text-accent" /> : <span className="size-4 rounded-full border border-line" />}
+              {label}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {showHero && suggestions.length > 0 && (
+        <section className="mx-auto mt-10 max-w-4xl">
+          <h2 className="mb-3 text-center text-sm font-medium uppercase tracking-wider text-muted">Try asking</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
             {suggestions.map((s) => (
-              <button key={s.question} type="button" disabled={busy} onClick={() => ask(s.question)}
-                className="rounded-xl border border-line bg-panel p-3 text-left shadow-sm transition-colors hover:border-accent hover:bg-soft disabled:opacity-50">
-                <span className="block text-xs font-semibold uppercase tracking-wider text-accent">{s.topic}</span>
-                <span className="block text-sm text-ink">{s.question}</span>
+              <button key={s.question} type="button" onClick={() => submit(s.question)}
+                className="group flex items-start justify-between gap-3 rounded-2xl border border-line bg-panel p-4 text-left shadow-card transition hover:-translate-y-0.5 hover:border-accent">
+                <span>
+                  <span className="block text-xs font-semibold uppercase tracking-wider text-accent">{s.topic}</span>
+                  <span className="mt-1 block text-[15px] leading-snug">{s.question}</span>
+                </span>
+                <ArrowRight size={18} className="mt-1 shrink-0 text-muted transition group-hover:translate-x-0.5 group-hover:text-accent" />
               </button>
             ))}
           </div>
-        </details>
+        </section>
       )}
-      {history.length > 0 && (
-        <p className="hint">Recent: {history.map((h) => <button key={h} className="linkbtn" onClick={() => ask(h)}>{h}</button>)}</p>
-      )}
-      {error && <p className="text-bad" role="alert">{error}</p>}
 
-      {data && !data.answer && <p className="hint">No results. Try different words, clear the filters, or ingest some documents first.</p>}
-      {busy && <p className="hint" aria-live="polite">Searching and writing an answer…</p>}
-      {answerError && <p className="text-bad" role="alert">Could not generate an answer: {answerError}</p>}
-      {grounded && (
-        <section className="card border-l-4 border-l-accent">
-          <h2 className="font-semibold text-accent">Answer</h2>
-          <AnswerText text={grounded.answer} />
-          {grounded.abstained && <p className="hint">Nothing relevant enough was found, so no answer was generated. Try different words.</p>}
-          {grounded.sources.length > 0 && (
-            <p className="mt-3 text-sm text-muted">
-              Sources: {grounded.sources.map((src) => (
-                <a key={src.n} href={`#match-${src.n}`} className="mr-2 text-accent underline hover:no-underline">[{src.n}] {where(src)}</a>
-              ))}
-            </p>
-          )}
-        </section>
-      )}
-      {!grounded && data?.answer && (
-        <section className="card border-l-4 border-l-accent">
-          <h2 className="font-semibold text-accent">Best match</h2>
-          <p className="my-2 whitespace-pre-wrap">{data.answer.text}</p>
-          <Source citation={data.answer.citation} score={data.answer.score} />
-        </section>
-      )}
-      {others.length > 0 && <h2 className="mb-1 mt-7 font-semibold">{grounded ? `More matches (top ${others.length})` : "Other matches"}</h2>}
-      {others.map((r, i) => (
-        <section className="card scroll-mt-20" key={r.n ?? i} id={r.n ? `match-${r.n}` : undefined}>
-          <div className="flex items-center gap-2">
-            {r.n && <span className="font-semibold text-accent">[{r.n}]</span>}
-            <span className={`badge ${r.type === "qa_pair" ? "!border-accent !bg-soft !text-accent" : r.type === "chunk" ? "!border-ok !text-ok" : ""}`}>{r.type.replace("_", " ")}</span>
-            <span className="text-sm text-muted">{where(r)} · score {r.score.toFixed(3)}</span>
-            {r.cited && <span className="ml-auto text-xs text-ok">used in the answer</span>}
+      {result && !busy && (
+        <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <div>
+            {answerError && <p className="mb-4 rounded-xl border border-bad/30 bg-bad/10 p-3 text-bad" role="alert">Could not write an answer ({answerError}). The matching passages are shown instead.</p>}
+            {grounded && <AnswerCard grounded={grounded} onCite={goToSource} />}
+            {!grounded && !data.results.length && <Empty>Nothing matched. Try different words or clear the filters.</Empty>}
           </div>
-          {r.answer ? <AnswerText text={r.answer} /> : <MatchText item={r} />}
-          {r.topics?.length > 0 && <p className="mt-2">{r.topics.map((t) => <span className="chip" key={t}>{t}</span>)}</p>}
-          <PassageLink item={r} />
-        </section>
-      ))}
-      {grounded && others.length === 0 && grounded.sources.length > 0 && <p className="hint mt-4">No further passages helped answer this.</p>}
-    </>
+          <aside className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+            <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">Sources <span className="rounded-full bg-soft px-2 py-0.5 text-xs font-medium text-accent">{sources.length}</span></h2>
+            {sources.length === 0 && <p className="hint">{grounded ? "No passages helped answer this." : "No results."}</p>}
+            {sources.map((s, i) => <SourceCard key={s.n ?? i} source={s} highlighted={active === s.n} />)}
+          </aside>
+        </div>
+      )}
+    </div>
   );
 }
 
-const Source = ({ citation, score }) => (
-  <p className="mt-1.5 text-sm text-muted">Source: {citation} · score {score.toFixed(3)}</p>
+const Chip = ({ active, ...props }) => (
+  <button type="button" aria-pressed={active} className={`rounded-full border px-3 py-1 transition ${active ? "border-accent bg-soft font-medium text-accent" : "border-line bg-panel text-muted hover:text-ink"}`} {...props} />
 );
 
-// A short preview: Q&A pairs as question and answer, long passages cut to a few lines (the link shows the rest)
-function MatchText({ item }) {
-  if (item.type === "qa_pair") {
-    return <p className="mt-2"><strong>{item.question}</strong><br />{item.answer}</p>;
+const Empty = ({ children }) => (
+  <div className="card flex items-center gap-3 text-muted"><Info size={18} />{children}</div>
+);
+
+function AnswerCard({ grounded, onCite }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => navigator.clipboard?.writeText(grounded.answer.replace(/\s*\[\d+\]/g, "")).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  if (grounded.abstained) {
+    return <Empty>{grounded.answer} Try different words, or check that the document covers this.</Empty>;
   }
-  return <p className="mt-2 line-clamp-4 whitespace-pre-line">{item.text}</p>;
+  return (
+    <article className="card !my-0 border-t-4 border-t-indigo-600">
+      <header className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 font-semibold text-accent"><Sparkles size={18} />Answer</h2>
+        <button onClick={copy} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted transition hover:bg-soft hover:text-accent" aria-label="Copy answer">
+          {copied ? <><Check size={14} />Copied</> : <><Copy size={14} />Copy</>}
+        </button>
+      </header>
+      <AnswerText text={grounded.answer} onCite={onCite} />
+      <p className="mt-4 border-t border-line pt-3 text-xs text-muted">Based on {grounded.sources.length} passage{grounded.sources.length === 1 ? "" : "s"} from your documents. Select a number to see its source.</p>
+    </article>
+  );
 }
 
-// Opens the passage the result came from (for a Q&A pair, the passage it was written from)
-function PassageLink({ item }) {
-  if (!item.document_id || item.parent_id == null) return null;
-  return <Link className="mt-2 inline-block text-sm text-accent underline hover:no-underline" to={`/passage/${item.document_id}/${item.parent_id}`}>View passage →</Link>;
+function SourceCard({ source: r, highlighted }) {
+  return (
+    <section id={r.n ? `match-${r.n}` : undefined} className={`card !my-0 mb-3 scroll-mt-28 !p-4 transition ${highlighted ? "ring-2 ring-accent" : ""}`}>
+      <div className="flex items-center gap-2 text-xs">
+        {r.n && <span className="grid size-5 shrink-0 place-items-center rounded-md bg-soft font-semibold text-accent">{r.n}</span>}
+        <span className="truncate font-medium text-ink">{r.citation}</span>
+        {r.cited && <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-ok"><Check size={13} />used</span>}
+      </div>
+      {(r.section || r.page) && <p className="mt-1 truncate text-xs text-muted">{[r.section, r.page ? `page ${r.page}` : ""].filter(Boolean).join(" · ")}</p>}
+      <div className="mt-2 text-sm">{r.n && r.answer ? <AnswerText text={r.answer} /> : <RawText item={r} />}</div>
+      <div className="mt-3 flex items-center gap-3">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-line" title={`similarity ${r.score.toFixed(3)}`}><div className="h-full rounded-full bg-linear-to-r from-indigo-600 to-violet-600" style={{ width: `${Math.round(Math.min(Math.max(r.score, 0), 1) * 100)}%` }} /></div>
+        {r.document_id && r.parent_id != null && (
+          <Link className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent hover:underline" to={`/passage/${r.document_id}/${r.parent_id}`}>View passage <ArrowRight size={13} /></Link>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// the raw fallback when no readable rewrite exists: Q&A pairs as question and answer, long passages cut short
+function RawText({ item }) {
+  if (!item.n && item.type === "qa_pair") return <p><strong>{item.question}</strong><br />{item.answer}</p>;  // a raw search result, not a card the LLM rewrote
+  return <p className="line-clamp-4 whitespace-pre-line">{item.text}</p>;
 }
 
 // paragraphs and "- " bullet lists, which is how the answer prompt asks the LLM to write
-function AnswerText({ text }) {
+function AnswerText({ text, onCite }) {
   const blocks = [];
   for (const line of text.split("\n")) {
     const bullet = line.match(/^\s*[-*•]\s+(.*)/);
@@ -152,16 +218,23 @@ function AnswerText({ text }) {
     } else if (line.trim()) blocks.push({ text: line });
   }
   return (
-    <div className="my-2 space-y-2">
+    <div className="space-y-2.5 leading-relaxed">
       {blocks.map((b, i) => b.list
-        ? <ul key={i} className="list-disc space-y-1 pl-5">{b.items.map((t, j) => <li key={j}>{inline(t)}</li>)}</ul>
-        : <p key={i}>{inline(b.text)}</p>)}
+        ? <ul key={i} className="list-disc space-y-1.5 pl-5 marker:text-accent">{b.items.map((t, j) => <li key={j}>{inline(t, onCite)}</li>)}</ul>
+        : <p key={i}>{inline(b.text, onCite)}</p>)}
     </div>
   );
 }
 
-// **bold** only; the LLM sometimes uses it for the heading of a bullet
-const inline = (t) => t.split(/\*\*(.+?)\*\*/).map((part, i) => (i % 2 ? <strong key={i}>{part}</strong> : part));
-
-// "Constitution of India (2024).pdf · Part III › Right to Freedom · p. 41"
-const where = (r) => [r.citation, r.section, r.page ? `p. ${r.page}` : ""].filter(Boolean).join(" · ");
+// **bold**, and [1][3] citations as small numbered chips that point at the source card
+function inline(text, onCite) {
+  return text.split(/(\*\*.+?\*\*|\[\d+\])/).map((part, i) => {
+    if (part.startsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
+    const cite = part.match(/^\[(\d+)\]$/);
+    if (!cite) return part;
+    const n = Number(cite[1]);
+    return onCite
+      ? <button key={i} onClick={() => onCite(n)} className="ml-0.5 mr-px inline-grid size-5 -translate-y-px place-items-center rounded-md bg-soft align-middle text-[11px] font-semibold text-accent transition hover:bg-accent hover:text-white" aria-label={`Source ${n}`}>{n}</button>
+      : <span key={i} className="text-muted">[{n}]</span>;
+  });
+}

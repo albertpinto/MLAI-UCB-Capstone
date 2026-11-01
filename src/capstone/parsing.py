@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from .chunking import chunk_text, clean_text
+from .chunking import chunk_text, clean_text, is_contents
 from .config import Settings
 from .extract import extract_text
 
@@ -71,7 +71,7 @@ def _docling_parents(name: str, data: bytes, settings: Settings) -> list[Parent]
     def flush():
         nonlocal parts, section, page
         text = "\n".join(parts).strip()
-        if text and not garbled(text):
+        if text and not garbled(text) and not is_contents(text):  # a table of contents answers nothing and would be rewritten into prose
             parents.append(Parent(text, section, page))
         parts, section, page = [], "", None
 

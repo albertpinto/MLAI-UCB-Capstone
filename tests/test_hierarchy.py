@@ -125,3 +125,10 @@ def test_an_enrichment_call_that_raises_keeps_the_raw_child(store):
 
     result = ingest_text(store, DownLLM(), SETTINGS, "Guide", "Click Add Brand.", parents=[Parent("Click Add Brand.")])
     assert result.status == "processed" and result.chunks == 1
+
+
+def test_contents_pages_are_not_made_into_parents(monkeypatch):
+    toc = [item("text", f"{n}. Heading number {n}.", page=5) for n in range(75, 125)]
+    with_docling(monkeypatch, [item("section_header", "Contents")] + toc + [item("section_header", "Part I"), item("text", "The Union shall be a Federation of States. " * 12, page=9)])
+    parents = parents_from_file("c.pdf", b"x", Settings(qdrant_url=":memory:", parent_chars=2000))  # a realistic parent size
+    assert [p.page for p in parents] == [9] and "Heading number" not in parents[0].text

@@ -64,7 +64,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
         """Returns `ok` while the API is running. The UI polls this to show the API status light in the header."""
         return {"status": "ok"}
 
-    @app.get("/api/branding", tags=["System"], summary="Company branding", responses={200: {"content": {"application/json": {"example": {"name": "Bakasura", "tagline": "Knowledge base", "logo_url": "/logo.svg"}}}}})
+    @app.get("/api/branding", tags=["System"], summary="Company branding", responses={200: {"content": {"application/json": {"example": {"name": "Bakasura", "tagline": "Ask your documents anything", "logo_url": "/logo.svg"}}}}})
     def branding():
         """Company name, tagline and logo URL shown in the UI header. Set with `COMPANY_NAME`, `COMPANY_TAGLINE` and `LOGO_URL` in `.env`."""
         return {"name": settings.company_name, "tagline": settings.company_tagline, "logo_url": settings.logo_url}
