@@ -24,16 +24,25 @@ class FakeEmbedder:
         return vectors
 
 
+@pytest.fixture(autouse=True)
+def offline_splitter(monkeypatch):
+    """Children are cut at blank lines or single lines, so tests never load the Chonkie model."""
+    monkeypatch.setattr("capstone.ingest.split_children", lambda text, settings: [p.strip() for p in text.split("\n\n") if p.strip()] or [text])
+
+
 class FakeLLM:
     def __init__(self):
         self.prompts = []  # user messages of grounded-answer calls
 
     def json_call(self, system, user, retries=3):
+        if "readable answers" in system:
+            return {"matches": [{"n": 1, "answer": "A readable version."}, {"n": 2, "answer": "Another readable version."}]}
         if "numbered context" in system:
             self.prompts.append(user)
             return {"answer": "Click Add Brand [1].", "sources": [1]}
-        if "question-answer" in system:
-            return {"qa_pairs": [{"question": "How do I add a brand?", "answer": "Click Add Brand."}]}
+        if "context_passage" in system:
+            child = user.split("CHILD:\n", 1)[1]
+            return {"context_passage": f"About brands. {child}", "qa_pairs": [{"question": "How do I add a brand?", "answer": "Click Add Brand."}]}
         return {"topics": [{"term": "brand", "definition": "A company identity."}], "summary": "How to manage brands."}
 
 

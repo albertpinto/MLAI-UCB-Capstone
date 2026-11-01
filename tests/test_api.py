@@ -63,3 +63,21 @@ def test_every_endpoint_is_documented(client):
     for path, methods in schema["paths"].items():
         for method, op in methods.items():
             assert op.get("summary") and op.get("description") and op.get("tags"), f"{method.upper()} {path} lacks docs"
+
+
+def test_suggestions_come_from_the_configured_file(client, settings, tmp_path):
+    settings.suggested_questions_file = tmp_path / "none.json"
+    assert client.get("/api/suggestions").json() == {"suggestions": []}
+    settings.suggested_questions_file.write_text('[{"topic": "T", "question": "Q?"}]')
+    assert client.get("/api/suggestions").json() == {"suggestions": [{"topic": "T", "question": "Q?"}]}
+
+
+def test_passage_endpoint_and_contents_pages_are_hidden(client):
+    item = ingest(client, "Guide", DOC)
+    passage = client.get(f"/api/documents/{item['document_id']}/passages/0").json()
+    assert passage["title"] == "Guide" and passage["total"] == item["parents"] and passage["text"] == DOC  # the original text, not the LLM's
+    assert client.get(f"/api/documents/{item['document_id']}/passages/99").status_code == 404
+    toc = "\n".join(f"{n}. Heading number {n}." for n in range(1, 12))
+    ingest(client, "Contents", toc)
+    found = client.post("/api/search", json={"query": "Heading number", "limit": 20}).json()["results"]
+    assert not [r for r in found if r["title"] == "Contents" and r["type"] == "chunk"]

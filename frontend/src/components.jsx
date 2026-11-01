@@ -54,13 +54,13 @@ export function UploadBox({ onDone, children }) {
       {error && <p className="my-3 text-bad" role="alert">{error}</p>}
       {items.length > 0 && (
         <table className="mt-4 w-full overflow-x-auto rounded-xl border border-line bg-panel text-sm">
-          <thead className="bg-bg text-left text-xs uppercase tracking-wider text-muted"><tr className="[&>th]:px-3 [&>th]:py-2.5"><th>File</th><th>Status</th><th>Chunks</th><th>Q&amp;A</th><th>Topics</th></tr></thead>
+          <thead className="bg-bg text-left text-xs uppercase tracking-wider text-muted"><tr className="[&>th]:px-3 [&>th]:py-2.5"><th>File</th><th>Status</th><th>Sections</th><th>Chunks</th><th>Q&amp;A</th><th>Topics</th></tr></thead>
           <tbody>
             {items.map((i) => (
               <tr key={i.name} className="border-t border-line hover:bg-soft [&>td]:px-3 [&>td]:py-2">
                 <td>{i.name}</td>
                 <td className={i.status === "processed" ? "text-ok" : i.status === "failed" ? "text-bad" : "text-muted"}>{i.status}{i.error ? `: ${i.error}` : ""}</td>
-                <td>{i.chunks}</td><td>{i.qa_pairs}</td><td>{i.topics}</td>
+                <td>{i.parents}</td><td>{i.chunks}</td><td>{i.qa_pairs}</td><td>{i.topics}</td>
               </tr>
             ))}
           </tbody>

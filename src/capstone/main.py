@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 import uuid
@@ -7,10 +8,11 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from .config import Settings, get_settings
-from .extract import SUPPORTED, extract_text
+from .extract import SUPPORTED
 from .answer import answer_question
 from .ingest import IngestResult, ingest_text
 from .llm import LLM
+from .parsing import parents_from_file
 from .schemas import AskRequest, SearchRequest, TextDocument
 from .store import Embedder, Store
 
@@ -42,11 +44,12 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
         with ingest_lock:
             for result, title, content in docs:
                 try:
-                    text = content if isinstance(content, str) else extract_text(title, content)
+                    parents = None if isinstance(content, str) else parents_from_file(title, content, settings)
+                    text = content if parents is None else "\n\n".join(p.text for p in parents)
                 except Exception as exc:
                     result.status, result.error = "failed", str(exc)
                     continue
-                ingest_text(app.state.store, app.state.llm, settings, title, text, result)
+                ingest_text(app.state.store, app.state.llm, settings, title, text, result, parents)
         jobs[job_id]["status"] = "done"
 
     def start_job(background: BackgroundTasks, docs: list[tuple[str, bytes | str]]) -> dict:
@@ -65,6 +68,15 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     def branding():
         """Company name, tagline and logo URL shown in the UI header. Set with `COMPANY_NAME`, `COMPANY_TAGLINE` and `LOGO_URL` in `.env`."""
         return {"name": settings.company_name, "tagline": settings.company_tagline, "logo_url": settings.logo_url}
+
+    @app.get("/api/suggestions", tags=["Search"], summary="Suggested questions", responses={200: {"content": {"application/json": {"example": {
+        "suggestions": [{"topic": "The President", "question": "How is the President of India elected?"}]}}}}})
+    def suggestions():
+        """A pick list of example questions for the Ask page, read from the JSON file at `SUGGESTED_QUESTIONS_FILE`
+        (a list of `{"topic", "question"}`). Returns an empty list if the file does not exist.
+        """
+        path = settings.suggested_questions_file
+        return {"suggestions": json.loads(path.read_text()) if path.is_file() else []}
 
     @app.post("/api/ingest/files", tags=["Ingest"], summary="Upload documents", responses={200: {"content": {"application/json": {"example": {"job_id": "b59a6883-bef9-4a34-9cbd-f1a76b447e50"}}}}})
     async def ingest_files(files: list[UploadFile], background: BackgroundTasks):
@@ -120,6 +132,19 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
         """Every document currently stored, with its id and title."""
         return {"documents": app.state.store.documents()}
 
+    @app.get("/api/documents/{document_id}/passages/{parent_id}", tags=["Documents"], summary="Read one passage", responses={200: {"content": {"application/json": {"example": {
+        "document_id": "7cd5ca08-…", "title": "Constitution of India (2024).pdf", "citation": "Constitution of India (2024).pdf", "section": "Part III › Right to Freedom",
+        "page": 41, "parent_id": 120, "total": 640, "text": "32. Remedies for enforcement of rights conferred by this Part.—(1) The right to move the Supreme Court…"}}}}})
+    def get_passage(document_id: str, parent_id: int):
+        """The original text of one passage (a parent chunk: a section of about half a page), with its heading path and page, and how many passages the document has.
+        Search results and answer sources link here; the small chunk that matched is part of this passage. `parent_id` counts from 0, so use ±1 for the neighbours.
+        Returns 404 if there is no such passage.
+        """
+        found = app.state.store.passage(document_id, parent_id)
+        if not found:
+            raise HTTPException(404, "Unknown passage")
+        return found
+
     @app.delete("/api/documents/{document_id}", tags=["Documents"], summary="Delete a document", responses={200: {"content": {"application/json": {"example": {"deleted": "56a545b7-…"}}}}})
     def delete_document(document_id: str):
         """Permanently deletes a document and everything derived from it: its chunks, Q&A pairs, topics and summary. This cannot be undone."""
@@ -147,17 +172,18 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     @app.post("/api/ask", tags=["Search"], summary="Ask a question (grounded answer)", responses={200: {"content": {"application/json": {"example": {
         "answer": "Check that your account is connected and the post is not scheduled for later [1].",
         "abstained": False,
-        "sources": [{"n": 1, "text": "Q: Why did my post fail?…", "type": "qa_pair", "citation": "Post Failures.txt", "score": 0.52}]}}}}})
+        "sources": [{"n": 1, "text": "Q: Why did my post fail?…", "type": "qa_pair", "citation": "Post Failures.txt", "score": 0.52}],
+        "matches": [{"n": 2, "answer": "Posts also fail when the media file is too large.", "type": "chunk", "citation": "Post Failures.txt", "score": 0.48}]}}}}})
     def ask(req: AskRequest):
         """Answers a question in natural language, using only your documents.
 
         Retrieval runs first (same as `POST /api/search`); the best passages are then given to the LLM as numbered context, and it writes a short answer citing them as `[1]`, `[2]`.
-        `sources` lists the cited passages with their document. If nothing relevant is retrieved (every score below `ANSWER_MIN_SCORE`), or the passages do not contain the answer,
+        `sources` lists the cited passages with their document. `matches` are up to 10 other retrieved passages, each rewritten by the LLM as a short readable answer (passages that do not help are left out). If nothing relevant is retrieved (every score below `ANSWER_MIN_SCORE`), or the passages do not contain the answer,
         `abstained` is `true` and the answer says so instead of guessing. Returns 400 for a blank query and 500 if the LLM call fails.
         """
         if not req.query.strip():
             raise HTTPException(400, "Query is required")
-        results = app.state.store.search(req.query, settings.answer_results, req.types, req.topics)
+        results = app.state.store.with_parents(app.state.store.search(req.query, settings.answer_results, req.types, req.topics))
         return answer_question(app.state.llm, req.query, results, settings.answer_min_score)
 
     @app.get("/api/topics", tags=["Search"], summary="List topics", responses={200: {"content": {"application/json": {"example": {"topics": ["Scheduling", "Billing"]}}}}})

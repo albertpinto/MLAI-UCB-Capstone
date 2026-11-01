@@ -39,3 +39,38 @@ def chunk_text(text: str, size: int = 1000, overlap: int = 150) -> list[str]:
     if current:
         chunks.append(current)
     return chunks
+
+
+_NUMBERED = re.compile(r"^\s*\d+[A-Z]{0,2}\.\s")
+
+
+def reflow(text: str) -> str:
+    """Undo the hard line wraps PDFs leave in text, so it reads (and is sent to the LLM) as sentences.
+
+    A line continues the previous one when it starts in lowercase, or when the previous line has no closing
+    punctuation and the new line is not a list item such as "(a)" or "19.". Blank lines stay paragraph breaks.
+    """
+    lines: list[str] = []
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if not line:
+            if lines and lines[-1]:
+                lines.append("")
+            continue
+        if lines and lines[-1]:
+            previous = lines[-1]
+            is_item = line.startswith("(") or _NUMBERED.match(line)
+            if line[0].islower() or (not previous.endswith((".", ";", ":", "?", "!", "\u2014")) and not is_item):
+                lines[-1] = f"{previous} {line}"
+                continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def is_contents(text: str) -> bool:
+    """True for a table-of-contents chunk: mostly short numbered headings ("79. Constitution of Parliament.")."""
+    lines = [l for l in text.split("\n") if l.strip()]
+    if len(lines) < 6:
+        return False
+    numbered = sum(1 for l in lines if _NUMBERED.match(l) and len(l) < 90)
+    return numbered / len(lines) > 0.5

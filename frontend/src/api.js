@@ -15,6 +15,8 @@ export const search = (query, types) =>
   request("/search", json("POST", { query, limit: 10, types: types.length ? types : null }));
 export const ask = (query, types) =>
   request("/ask", json("POST", { query, types: types.length ? types : null }));
+export const getSuggestions = () => request("/suggestions");
+export const getPassage = (documentId, parentId) => request(`/documents/${documentId}/passages/${parentId}`);
 export const ingestFiles = (files) => {
   const form = new FormData();
   files.forEach((f) => form.append("files", f));

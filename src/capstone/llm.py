@@ -16,7 +16,7 @@ class LLM:
         self.client = Groq(api_key=api_key)
         self.model = model
 
-    def json_call(self, system: str, user: str, retries: int = 3) -> dict:
+    def json_call(self, system: str, user: str, retries: int = 5) -> dict:
         for attempt in range(retries):
             try:
                 response = self.client.chat.completions.create(
@@ -25,7 +25,10 @@ class LLM:
                     response_format={"type": "json_object"},
                     temperature=0.3,
                 )
-                return json.loads(response.choices[0].message.content)
+                data = json.loads(response.choices[0].message.content)
+                if not isinstance(data, dict):  # callers read fields from it; a list or string is a bad reply, so retry
+                    raise ValueError(f"Expected a JSON object, got {type(data).__name__}")
+                return data
             except Exception as exc:
                 logger.warning("LLM call failed (attempt %d/%d): %s", attempt + 1, retries, exc)
                 if attempt == retries - 1:

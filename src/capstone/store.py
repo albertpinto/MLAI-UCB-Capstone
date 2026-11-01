@@ -4,6 +4,8 @@ from pathlib import Path
 
 from qdrant_client import QdrantClient, models
 
+from .chunking import is_contents, reflow
+
 logger = logging.getLogger(__name__)
 
 TYPES = ("chunk", "qa_pair", "topic", "summary")
@@ -50,7 +52,7 @@ def display_text(payload: dict) -> str:
         return f"Q: {payload['question']}\nA: {payload['answer']}"
     if kind == "topic":
         return f"{payload['term']}: {payload['definition']}"
-    return payload.get("content", "")
+    return reflow(payload.get("content", ""))
 
 
 class Store:
@@ -71,6 +73,7 @@ class Store:
         )
         for key in ("type", "document_id", "file_hash", "topics"):
             self.client.create_payload_index(self.collection, key, models.PayloadSchemaType.KEYWORD)
+        self.client.create_payload_index(self.collection, "parent_id", models.PayloadSchemaType.INTEGER)
 
     def has_hash(self, file_hash: str) -> bool:
         flt = models.Filter(must=[_equals("file_hash", file_hash)])
@@ -100,7 +103,42 @@ class Store:
             query_filter=models.Filter(must=must) if must else None,
             with_payload=True,
         )
-        return [{"score": hit.score, "text": display_text(hit.payload), **hit.payload} for hit in response.points]
+        results = [
+            {"score": hit.score, "text": display_text(hit.payload), **{k: v for k, v in hit.payload.items() if k != "parent_text"}}  # parents are fetched by with_parents
+            for hit in response.points
+        ]
+        return [r for r in results if not (r["type"] == "chunk" and is_contents(r["content"]))]  # a contents page answers nothing
+
+    def _parent_payload(self, document_id: str, parent_id: int) -> dict | None:
+        """Any child of the parent: they all carry the parent's text, section and page."""
+        found = self._scroll([_equals("document_id", document_id), _equals("type", "chunk"), _equals("parent_id", parent_id)], limit=1)
+        return found[0] if found else None
+
+    def with_parents(self, results: list[dict]) -> list[dict]:
+        """Small-to-big: add `context`, the parent's full text, to each result that came from a child chunk.
+
+        Results from the same parent are merged (the best-ranked one is kept) so the LLM never reads a section twice.
+        """
+        expanded, seen = [], set()
+        for r in results:
+            key = (r["document_id"], r.get("parent_id"))
+            if r.get("parent_id") is None:
+                expanded.append(r)
+            elif key not in seen:
+                seen.add(key)
+                parent = self._parent_payload(*key)
+                expanded.append({**r, "context": parent["parent_text"] if parent else r["text"]})
+        return expanded
+
+    def passage(self, document_id: str, parent_id: int) -> dict | None:
+        """A parent chunk: the original section text with its heading and page, or None."""
+        payload = self._parent_payload(document_id, parent_id)
+        if not payload:
+            return None
+        return {
+            "document_id": document_id, "title": payload["title"], "citation": payload["citation"], "section": payload["section"],
+            "page": payload["page"], "parent_id": parent_id, "total": payload["parents_total"], "text": payload["parent_text"],
+        }
 
     def _scroll(self, must: list, limit: int = 1000) -> list[dict]:
         points, _ = self.client.scroll(
