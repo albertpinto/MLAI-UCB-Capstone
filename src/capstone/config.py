@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
 
     qdrant_url: str = "http://localhost:6335"
-    collection: str = "capstone_india_hier"
+    collection: str = "constitution_india"
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embed_device: str = ""  # "" = auto (GPU if available), or "cpu" / "cuda"
     embed_threads: int = 4  # CPU threads torch may use; the default is every core, which can overload the machine
