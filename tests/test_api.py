@@ -25,7 +25,7 @@ def test_ingest_search_and_dedup(client):
 
     body = client.post("/api/search", json={"query": "how do I add a brand?", "limit": 5}).json()
     assert body["results"] and body["answer"]["citation"] == "Guide"
-    assert {r["type"] for r in body["results"]} <= {"chunk", "qa_pair", "topic", "summary"}
+    assert {r["type"] for r in body["results"]} <= {"chunk", "qa_pair", "factoid", "topic", "summary"}  # triplets only when asked for
 
     only_topics = client.post("/api/search", json={"query": "brand", "types": ["topic"]}).json()["results"]
     assert only_topics and all(r["type"] == "topic" for r in only_topics)

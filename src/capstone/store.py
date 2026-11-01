@@ -8,7 +8,8 @@ from .chunking import is_contents, reflow
 
 logger = logging.getLogger(__name__)
 
-TYPES = ("chunk", "qa_pair", "topic", "summary")
+TYPES = ("chunk", "qa_pair", "factoid", "triplet", "topic", "summary")
+DEFAULT_TYPES = [t for t in TYPES if t != "triplet"]  # triplets are short and numerous; they only join a search when asked for
 BATCH = 64
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -52,6 +53,8 @@ def display_text(payload: dict) -> str:
         return f"Q: {payload['question']}\nA: {payload['answer']}"
     if kind == "topic":
         return f"{payload['term']}: {payload['definition']}"
+    if kind == "triplet":
+        return f"{payload['subject']} → {payload['relation']} → {payload['object']}"
     return reflow(payload.get("content", ""))
 
 
@@ -91,9 +94,7 @@ class Store:
             self.client.upsert(self.collection, points=points)
 
     def search(self, query: str, limit: int = 10, types: list[str] | None = None, topics: list[str] | None = None) -> list[dict]:
-        must = []
-        if types:
-            must.append(_match("type", types))
+        must = [_match("type", types or DEFAULT_TYPES)]
         if topics:
             must.append(_match("topics", topics))
         response = self.client.query_points(

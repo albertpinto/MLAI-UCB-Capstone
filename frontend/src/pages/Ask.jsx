@@ -6,6 +6,8 @@ import { ask as askApi, getSuggestions, search } from "../api.js";
 const TYPES = [
   ["qa_pair", "Q&A"],
   ["chunk", "Passages"],
+  ["factoid", "Facts"],
+  ["triplet", "Relations"],
   ["summary", "Summaries"],
   ["topic", "Topics"],
 ];

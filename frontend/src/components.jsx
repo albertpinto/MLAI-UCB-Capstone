@@ -63,13 +63,13 @@ export function UploadBox({ onDone, children }) {
       {items.length > 0 && (
         <div className="mt-4 overflow-x-auto rounded-2xl border border-line bg-panel shadow-card">
           <table className="w-full text-sm">
-            <thead className="bg-bg text-left text-xs uppercase tracking-wider text-muted"><tr className="[&>th]:px-4 [&>th]:py-3"><th>File</th><th>Status</th><th>Sections</th><th>Chunks</th><th>Q&amp;A</th><th>Topics</th></tr></thead>
+            <thead className="bg-bg text-left text-xs uppercase tracking-wider text-muted"><tr className="[&>th]:px-4 [&>th]:py-3"><th>File</th><th>Status</th><th>Sections</th><th>Chunks</th><th>Q&amp;A</th><th>Facts</th><th>Triplets</th><th>Terms</th></tr></thead>
             <tbody>
               {items.map((i) => (
                 <tr key={i.name} className="border-t border-line [&>td]:px-4 [&>td]:py-3">
                   <td className="font-medium">{i.name}</td>
                   <td><StatusBadge item={i} /></td>
-                  <td>{i.parents}</td><td>{i.chunks}</td><td>{i.qa_pairs}</td><td>{i.topics}</td>
+                  <td>{i.parents}</td><td>{i.chunks}</td><td>{i.qa_pairs}</td><td>{i.factoids}</td><td>{i.triplets}</td><td>{i.topics}</td>
                 </tr>
               ))}
             </tbody>

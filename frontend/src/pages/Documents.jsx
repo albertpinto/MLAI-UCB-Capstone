@@ -66,7 +66,7 @@ function Paste({ onDone }) {
       const { job_id } = await ingestText(title, text);
       const item = (await watchJob(job_id, () => {})).items[0];
       if (item.status === "failed") throw new Error(item.error);
-      setMessage(item.status === "skipped" ? "That text is already stored." : `Added: ${item.chunks} chunks, ${item.qa_pairs} Q&A pairs, ${item.topics} topics.`);
+      setMessage(item.status === "skipped" ? "That text is already stored." : `Added: ${item.chunks} chunks, ${item.qa_pairs} Q&A pairs, ${item.factoids} facts, ${item.triplets} triplets.`);
       if (item.status === "processed") { setTitle(""); setText(""); onDone(); }
     } catch (err) {
       setError(err.message);

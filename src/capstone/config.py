@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     parent_chars: int = 1800  # size of a parent chunk (a topic section, about half a page); children are matched, parents are read
     child_words: int = 65  # target size of a child chunk; Chonkie splits a parent at meaning boundaries up to this size
     child_min_words: int = 20  # a smaller piece is merged into its neighbour, because tiny chunks embed thinly
+    enrich_cache: Path | None = Path("data/enrichment_cache.jsonl")  # LLM results per child, so a crashed ingest resumes; None disables
     docling_threads: int = 4  # CPU threads for Docling's layout model
     chunk_chars: int = 1000  # the old single-level chunker, still used by eval/eval.py for its raw-chunk baseline
     chunk_overlap: int = 150

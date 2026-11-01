@@ -40,15 +40,20 @@ class FakeLLM:
         if "numbered context" in system:
             self.prompts.append(user)
             return {"answer": "Click Add Brand [1].", "sources": [1]}
-        if "context_passage" in system:
-            child = user.split("CHILD:\n", 1)[1]
-            return {"context_passage": f"About brands. {child}", "qa_pairs": [{"question": "How do I add a brand?", "answer": "Click Add Brand."}]}
+        if "resolve references" in system:
+            return {"replacements": [], "resolved": user.split("CHILD:\n", 1)[1]}
+        if "search index" in system:
+            return {
+                "qa_pairs": [{"question": "How do I add a brand?", "answer": "Click Add Brand."}],
+                "factoids": ["The Add Brand button creates a brand."],
+                "triplets": [{"subject": "Add Brand button", "relation": "creates", "object": "a brand"}],
+            }
         return {"topics": [{"term": "brand", "definition": "A company identity."}], "summary": "How to manage brands."}
 
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(qdrant_url=":memory:", collection="test", docs_dir=tmp_path, groq_api_key="x")
+    return Settings(qdrant_url=":memory:", collection="test", docs_dir=tmp_path, groq_api_key="x", enrich_cache=None)
 
 
 @pytest.fixture
