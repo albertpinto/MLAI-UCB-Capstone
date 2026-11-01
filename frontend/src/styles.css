@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/* Colour tokens switch with the OS theme; Tailwind classes such as bg-panel use them. */
+:root {
+  --bg: #f4f6f9; --panel: #fff; --text: #1a2230; --muted: #667085; --line: #e3e7ee;
+  --accent: #1d4ed8; --accent-soft: #e8efff; --nav: #0f1b2d; --ok: #187a3e; --bad: #b3261e;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0d1117; --panel: #161b22; --text: #e6edf3; --muted: #8b98a9; --line: #2a313c; --accent: #6ea0ff; --accent-soft: #1b2a47; --nav: #0a0f16; --ok: #4cc27a; --bad: #f2877f; }
+}
+@theme inline {
+  --color-bg: var(--bg); --color-panel: var(--panel); --color-ink: var(--text); --color-muted: var(--muted);
+  --color-line: var(--line); --color-accent: var(--accent); --color-soft: var(--accent-soft);
+  --color-nav: var(--nav); --color-ok: var(--ok); --color-bad: var(--bad);
+}
+
+body { @apply bg-bg text-ink antialiased; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* reusable pieces, so the pages stay readable */
+@layer components {
+  .field { @apply w-full rounded-lg border border-line bg-panel px-3 py-2.5 text-ink focus:border-accent; }
+  .btn { @apply cursor-pointer rounded-lg bg-accent px-4 py-2.5 font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-50; }
+  .linkbtn { @apply cursor-pointer px-1.5 text-accent underline hover:no-underline; }
+  .card { @apply my-3 rounded-xl border border-line bg-panel p-4 shadow-sm; }
+  .hint { @apply text-sm text-muted; }
+  .badge { @apply rounded-full border border-line px-2.5 py-0.5 text-xs uppercase tracking-wider text-muted; }
+  .chip { @apply mr-1.5 inline-block rounded-full border border-line bg-bg px-2.5 text-xs; }
+}

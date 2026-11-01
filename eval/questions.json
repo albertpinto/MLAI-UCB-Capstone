@@ -1,0 +1,18 @@
+[
+  {"question": "Why didn't my scheduled post go out?", "document": "Post Failures.txt"},
+  {"question": "How far ahead of the publish time do I need to schedule a post?", "document": "Post Failures.txt"},
+  {"question": "My account got locked, how many wrong passwords are allowed?", "document": "Login Attempts.txt"},
+  {"question": "I forgot my password, how do I get back in?", "document": "Password Help.txt"},
+  {"question": "How big can a single video file be on the Professional plan?", "document": "File Size Limits.txt"},
+  {"question": "Which image and video formats can I upload?", "document": "File Types Supported.txt"},
+  {"question": "How long can I be idle before I get signed out?", "document": "Timeout.txt"},
+  {"question": "How do I sign out of the app?", "document": "Logout.txt"},
+  {"question": "I can't connect my Facebook page, what do I need?", "document": "Facebook Account Add Issue.txt"},
+  {"question": "It says my organization already exists when I sign up, what should I do?", "document": "Organization Name Issue.txt"},
+  {"question": "How do I give a colleague access to our account?", "document": "Team Management.txt"},
+  {"question": "What is the difference between Admin and Staff users?", "document": "Team Management.txt"},
+  {"question": "Where can I see a calendar of my upcoming posts?", "document": "Scheduler.txt"},
+  {"question": "How do I see how well my social media posts performed?", "document": "Analytics.txt"},
+  {"question": "What subscription plans are available?", "document": "Billing.txt"},
+  {"question": "My upload keeps failing, what should I check?", "document": "Multimedia File Issues.txt"}
+]

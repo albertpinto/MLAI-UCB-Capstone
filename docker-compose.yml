@@ -1,0 +1,12 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: capstone-qdrant
+    ports:
+      - "6335:6333"   # host 6335 avoids a clash with other Qdrant containers on 6333
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
