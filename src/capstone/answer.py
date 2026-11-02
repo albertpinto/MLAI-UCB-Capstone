@@ -23,7 +23,7 @@ MATCHES_SYSTEM = (
     'Reply as JSON: {"matches": [{"n": 1, "answer": "..."}, {"n": 2, "answer": null}]}'
 )
 MAX_MATCHES = 10
-SOURCE_KEYS = ("text", "type", "citation", "score", "document_id", "parent_id", "section", "page")
+SOURCE_KEYS = ("text", "type", "citation", "score", "document_id", "parent_id", "section", "page", "graph")  # graph: entities that led the knowledge graph to this passage
 
 
 def _numbered(passages: list[dict]) -> str:

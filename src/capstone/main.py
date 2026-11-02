@@ -14,6 +14,7 @@ from .answer import answer_question
 from .ingest import IngestResult, ingest_text
 from .llm import LLM
 from .parsing import parents_from_file
+from . import graph as kg
 from .evaluation import RETRIEVERS, default_reranker, available_retrievers, build_scorers, load_corpus, load_questions, relevant_sections, run_evaluation
 from .schemas import AskRequest, EvalQuestions, EvalRun, SearchRequest, TextDocument
 from .store import Embedder, Store
@@ -28,6 +29,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     ingest_lock = threading.Lock()  # one ingestion at a time: the embedding model is shared
     eval_jobs: dict[str, dict] = {}
     embedders: dict[str, object] = {}
+    aliases = kg.load_aliases(settings.graph_aliases_file)
 
     def embedder_for(name: str):
         if name not in embedders:
@@ -41,6 +43,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
             store_ = Store(settings.qdrant_url, settings.collection, Embedder(settings.embed_model, settings.embed_device, settings.embed_threads), reranker, settings.rerank_candidates)
         app.state.store = store or store_
         app.state.llm = llm or LLM(settings.groq_api_key, settings.groq_model)
+        app.state.graph = kg.load(settings.graph_path)
         yield
 
     app = FastAPI(
@@ -50,6 +53,17 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
         openapi_url="/api/openapi.json",  # under /api so the UI's dev proxy can reach it
         lifespan=lifespan,
     )
+
+    def rebuild_graph() -> dict:
+        """Build the graph from the stored triplets, save it, and store one searchable summary point per document."""
+        store_ = app.state.store
+        graph = kg.build(store_.all_payloads("triplet"), aliases)
+        kg.save(graph, settings.graph_path)
+        app.state.graph = graph
+        summaries = [(text, {"document_id": d["document_id"], "title": d["title"], "citation": d["citation"], "type": "graph_summary", "content": text, "topics": []})
+                     for d in store_.documents() if (text := kg.summary_text(graph, d["title"], d["document_id"]))]
+        store_.replace_graph_summaries(summaries)
+        return kg.stats(graph)
 
     def run_job(job_id: str, docs: list[tuple[IngestResult, str, bytes | str]]) -> None:
         """docs: (result row, title, raw bytes to extract from, or text). Parsing the next file overlaps the LLM work on the current one."""
@@ -66,6 +80,11 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
                     result.status, result.error = "failed", str(exc)
                     continue
                 ingest_text(app.state.store, app.state.llm, settings, title, text, result, parents)
+            if any(r.status == "processed" for r, _, _ in docs):
+                try:
+                    rebuild_graph()
+                except Exception:
+                    logging.getLogger(__name__).exception("Rebuilding the knowledge graph failed")
         jobs[job_id]["status"] = "done"
 
     def start_job(background: BackgroundTasks, docs: list[tuple[str, bytes | str]]) -> dict:
@@ -165,7 +184,14 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     def delete_document(document_id: str):
         """Permanently deletes a document and everything derived from it: its chunks, Q&A pairs, topics and summary. This cannot be undone."""
         app.state.store.delete_document(document_id)
+        if app.state.graph is not None:
+            rebuild_graph()
         return {"deleted": document_id}
+
+    def graph_for(requested: bool | None) -> tuple:
+        """(graph, aliases) for a search, or (None, None) when graph-assisted retrieval is off or no graph is built."""
+        use = settings.graph_search if requested is None else requested
+        return (app.state.graph, aliases) if use and app.state.graph is not None else (None, None)
 
     @app.post("/api/search", tags=["Search"], summary="Semantic search", responses={200: {"content": {"application/json": {"example": {"answer": {"text": "Q: Who do I contact…?\nA: support@example.com", "type": "qa_pair", "citation": "Post Failures.txt", "score": 0.41}, "results": ["… same shape plus document_id, file_hash, topics …"]}}}}})
     def search(req: SearchRequest):
@@ -177,7 +203,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
         """
         if not req.query.strip():
             raise HTTPException(400, "Query is required")
-        results = app.state.store.search(req.query, req.limit, req.types, req.topics)
+        results = app.state.store.search(req.query, req.limit, req.types, req.topics, *graph_for(req.graph))
         # Immediate answer: the best-ranked Q&A pair or summary, else the best chunk.
         best = next((r for r in results if r["type"] in ("qa_pair", "summary")), None) or next(
             (r for r in results if r["type"] == "chunk"), None
@@ -199,7 +225,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
         """
         if not req.query.strip():
             raise HTTPException(400, "Query is required")
-        results = app.state.store.with_parents(app.state.store.search(req.query, settings.answer_results, req.types, req.topics))
+        results = app.state.store.with_parents(app.state.store.search(req.query, settings.answer_results, req.types, req.topics, *graph_for(req.graph)))
         return answer_question(app.state.llm, req.query, results, settings.answer_min_score)
 
     @app.get("/api/topics", tags=["Search"], summary="List topics", responses={200: {"content": {"application/json": {"example": {"topics": ["Scheduling", "Billing"]}}}}})
@@ -288,7 +314,39 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
         logging.getLogger(__name__).exception("Unhandled error")
         return JSONResponse(status_code=500, content={"detail": str(exc)})
 
+    @app.post("/api/graph/rebuild", tags=["Knowledge graph"], summary="Build the knowledge graph", responses={200: {"content": {"application/json": {"example": {"entities": 5212, "relations": 5416, "documents": 1}}}}})
+    def graph_rebuild():
+        """Builds the graph from every stored `triplet` point (entities are normalised so spellings merge), saves it to `GRAPH_DIR`, and stores one `graph_summary` point per document so the graph is searchable. It also runs after every ingestion and deletion. Returns the counts."""
+        return rebuild_graph()
+
+    @app.get("/api/graph/stats", tags=["Knowledge graph"], summary="Knowledge graph statistics", responses={200: {"content": {"application/json": {"example": {"built": True, "entities": 5212, "relations": 5416, "documents": 1,
+        "top_entities": [{"id": "governor", "label": "Governor", "degree": 213}], "top_relations": [{"relation": "includes", "count": 155}]}}}}})
+    def graph_stats():
+        """Size of the graph, its most-connected entities and its most common relations. `{"built": false}` until the graph has been built."""
+        return {"built": True, **kg.stats(app.state.graph)} if app.state.graph is not None else {"built": False}
+
+    @app.get("/api/graph/entities", tags=["Knowledge graph"], summary="Find entities", responses={200: {"content": {"application/json": {"example": {"entities": [{"id": "governor", "label": "Governor", "degree": 213}]}}}}})
+    def graph_entities(q: str):
+        """Entities whose normalised name contains `q`, the most connected first."""
+        return {"entities": kg.search_entities(app.state.graph, q) if app.state.graph is not None else []}
+
+    @app.get("/api/graph/entity", tags=["Knowledge graph"], summary="One entity and its neighbours", responses={200: {"content": {"application/json": {"example": {
+        "id": "governor", "label": "Governor", "nodes": [{"id": "governor", "label": "Governor", "degree": 213, "x": 0, "y": 0, "centre": True}], "edges": [{"source": "governor", "target": "chief minister", "relations": ["appoints"], "count": 1}],
+        "neighbours_total": 120, "facts": [{"subject": "Governor", "relation": "appoints", "object": "Chief Minister", "section": "Part VI › Council of Ministers", "page": 120, "document_id": "7cd5ca08-…", "parent_id": 4, "text": "164. …"}]}}}}})
+    def graph_entity(id: str):
+        """The entity, up to 20 of its most-connected neighbours with the relations between them (positions are computed server-side for drawing), and its triplets with the section, page and text of the chunk each came from. Returns 404 for an unknown entity."""
+        graph = app.state.graph
+        if graph is None or id not in graph:
+            raise HTTPException(404, "Unknown entity")
+        rows = kg.facts(graph, id)
+        chunks = app.state.store.chunk_payloads(list({(r["document_id"], r["chunk_id"]) for r in rows}))
+        for r in rows:
+            c = chunks.get((r["document_id"], r["chunk_id"]), {})
+            r.update(section=c.get("section", ""), page=c.get("page"), text=c.get("content", ""))
+        return {"id": id, "label": graph.nodes[id]["label"], **kg.neighbourhood(graph, id), "facts": rows}
+
     return app
 
 
 app = create_app()
+

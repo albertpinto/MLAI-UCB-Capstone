@@ -5,11 +5,13 @@ from pathlib import Path
 from qdrant_client import QdrantClient, models
 
 from .chunking import is_contents, part_key, reflow
+from . import graph as knowledge
+from .graph import RRF_K, graph_chunks, link_entities
 
 logger = logging.getLogger(__name__)
 
-TYPES = ("chunk", "qa_pair", "factoid", "triplet", "topic", "summary")
-DEFAULT_TYPES = [t for t in TYPES if t != "triplet"]  # triplets are short and numerous; they only join a search when asked for
+TYPES = ("chunk", "qa_pair", "factoid", "triplet", "topic", "summary", "graph_summary")
+DEFAULT_TYPES = [t for t in TYPES if t not in ("triplet", "graph_summary")]  # short and numerous, or about the graph; they only join a search when asked for
 BATCH = 64
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -95,13 +97,15 @@ class Store:
             ]
             self.client.upsert(self.collection, points=points)
 
-    def search(self, query: str, limit: int = 10, types: list[str] | None = None, topics: list[str] | None = None) -> list[dict]:
+    def search(self, query: str, limit: int = 10, types: list[str] | None = None, topics: list[str] | None = None, graph=None, aliases=None) -> list[dict]:
+        """Dense search; with a knowledge `graph`, chunks tied to the question's entities join the candidates (each result they touch carries `graph`, the entities)."""
         must = [_match("type", types or DEFAULT_TYPES)]
         if topics:
             must.append(_match("topics", topics))
+        vector = self.embedder.encode([query])[0]
         response = self.client.query_points(
             self.collection,
-            query=self.embedder.encode([query])[0],
+            query=vector,
             limit=max(limit, self.rerank_candidates) if self.reranker else limit,
             query_filter=models.Filter(must=must) if must else None,
             with_payload=True,
@@ -111,10 +115,41 @@ class Store:
             for hit in response.points
         ]
         results = [r for r in results if not (r["type"] == "chunk" and is_contents(r["content"]))]  # a contents page answers nothing
+        if graph is not None:
+            results = self._fuse_graph(vector, query, results, graph, aliases)[: max(limit, self.rerank_candidates) if self.reranker else limit]
         if self.reranker and len(results) > 1:  # only the order changes: `score` stays the cosine similarity the abstention rule uses
             relevance = self.reranker.predict([(query, r["text"]) for r in results])
             results = [r for _, r in sorted(zip(relevance, results), key=lambda pair: -pair[0])]
         return results[:limit]
+
+    def chunk_payloads(self, ids: list[tuple[str, int]], vector: list[float] | None = None) -> dict[tuple[str, int], dict]:
+        """Chunks by (document_id, chunk_id). With a query `vector` each also gets its cosine `score`."""
+        found = {}
+        for document_id in {d for d, _ in ids}:
+            wanted = [c for d, c in ids if d == document_id]
+            points, _ = self.client.scroll(
+                self.collection, limit=len(wanted), with_payload=True, with_vectors=vector is not None,
+                scroll_filter=models.Filter(must=[_equals("type", "chunk"), _equals("document_id", document_id), models.FieldCondition(key="chunk_id", match=models.MatchAny(any=wanted))]),
+            )
+            for p in points:
+                found[(document_id, p.payload["chunk_id"])] = {**p.payload, **({"score": float(sum(a * b for a, b in zip(p.vector, vector)))} if vector is not None else {})}
+        return found
+
+    def _fuse_graph(self, vector: list[float], query: str, results: list[dict], graph, aliases) -> list[dict]:
+        """Reciprocal rank fusion of the dense ranking with the graph's ranking of chunks. Graph chunks missing from the dense results are added."""
+        found = graph_chunks(graph, link_entities(graph, query, aliases), query)
+        fused = [1 / (RRF_K + i) for i in range(len(results))]
+        at = {(r["document_id"], r["chunk_id"]): i for i, r in enumerate(results) if r["type"] == "chunk"}
+        extra = self.chunk_payloads([c for c, _ in found if c not in at], vector)
+        for rank, (chunk, via) in enumerate(found):
+            if chunk in at:
+                fused[at[chunk]] += knowledge.GRAPH_WEIGHT / (RRF_K + rank)
+                results[at[chunk]]["graph"] = via
+            elif chunk in extra:
+                payload = extra[chunk]
+                results.append({"text": display_text(payload), **{k: v for k, v in payload.items() if k != "parent_text"}, "graph": via})
+                fused.append(knowledge.GRAPH_WEIGHT / (RRF_K + rank))
+        return [results[i] for i in sorted(range(len(results)), key=lambda i: -fused[i])]
 
     def _parent_payload(self, document_id: str, parent_id: int) -> dict | None:
         """Any child of the parent: they all carry the parent's text, section and page."""
@@ -195,6 +230,11 @@ class Store:
         for p in self._scroll([_equals("type", "topic")]):
             seen.setdefault(p["term"].lower(), {"term": p["term"], "definition": p["definition"]})
         return sorted(seen.values(), key=lambda t: t["term"].lower())
+
+    def replace_graph_summaries(self, items: list[tuple[str, dict]]) -> None:
+        """The graph summaries are derived from the graph, so each rebuild replaces them all."""
+        self.client.delete(self.collection, points_selector=models.FilterSelector(filter=models.Filter(must=[_equals("type", "graph_summary")])))
+        self.add(items)
 
     def delete_document(self, document_id: str) -> None:
         self.client.delete(

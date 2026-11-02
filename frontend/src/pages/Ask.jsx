@@ -10,6 +10,7 @@ const TYPES = [
   ["triplet", "Relations"],
   ["summary", "Summaries"],
   ["topic", "Topics"],
+  ["graph_summary", "Graph summaries"],
 ];
 const STEPS = ["Searching the documents", "Reading the matching sections", "Writing the answer"];
 
@@ -18,6 +19,7 @@ export default function Ask() {
   const urlQuery = params.get("q") ?? "";
   const [query, setQuery] = useState(urlQuery);
   const [types, setTypes] = useState([]);
+  const [useGraph, setUseGraph] = useState(false); // also pull in passages tied to the question's entities in the knowledge graph
   const [result, setResult] = useState(null); // { q, data, grounded, answerError }
   const [history, setHistory] = useState([]);
   const [error, setError] = useState("");
@@ -53,7 +55,7 @@ export default function Ask() {
     setError("");
     try {
       // the grounded answer and the plain results are independent: results still show if the LLM call fails
-      const [found, answer] = await Promise.allSettled([search(q, types), askApi(q, types)]);
+      const [found, answer] = await Promise.allSettled([search(q, types, useGraph || null), askApi(q, types, useGraph || null)]);
       if (found.status === "rejected") throw found.reason;
       setResult({ q, data: found.value, grounded: answer.status === "fulfilled" ? answer.value : null, answerError: answer.status === "rejected" ? answer.reason.message : "" });
       setHistory((h) => [q, ...h.filter((x) => x !== q)].slice(0, 6));
@@ -96,6 +98,8 @@ export default function Ask() {
           <span className="text-muted">Search in</span>
           <Chip active={types.length === 0} onClick={() => setTypes([])}>Everything</Chip>
           {TYPES.map(([t, label]) => <Chip key={t} active={types.includes(t)} onClick={() => toggle(t)}>{label}</Chip>)}
+          <span className="mx-1 text-line">|</span>
+          <Chip active={useGraph} onClick={() => setUseGraph(!useGraph)} title="Also use passages tied to the question's entities in the knowledge graph">Knowledge graph</Chip>
         </div>
         {history.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-sm">
@@ -191,6 +195,7 @@ function SourceCard({ source: r, highlighted }) {
         {r.cited && <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-ok"><Check size={13} />used</span>}
       </div>
       {(r.section || r.page) && <p className="mt-1 truncate text-xs text-muted">{[r.section, r.page ? `page ${r.page}` : ""].filter(Boolean).join(" · ")}</p>}
+      {r.graph?.length > 0 && <p className="mt-1 text-xs text-accent" title="The knowledge graph tied this passage to these entities in your question">via graph: {r.graph.join(", ")}</p>}
       <div className="mt-2 text-sm">{r.n && r.answer ? <AnswerText text={r.answer} /> : <RawText item={r} />}</div>
       <div className="mt-3 flex items-center gap-3">
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-line" title={`similarity ${r.score.toFixed(3)}`}><div className="h-full rounded-full bg-linear-to-r from-indigo-600 to-violet-600" style={{ width: `${Math.round(Math.min(Math.max(r.score, 0), 1) * 100)}%` }} /></div>

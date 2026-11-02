@@ -11,10 +11,11 @@ const json = (method, body) => ({
   body: JSON.stringify(body),
 });
 
-export const search = (query, types) =>
-  request("/search", json("POST", { query, limit: 10, types: types.length ? types : null }));
-export const ask = (query, types) =>
-  request("/ask", json("POST", { query, types: types.length ? types : null }));
+// `graph` true also uses the knowledge graph; null leaves it to the server's GRAPH_SEARCH setting.
+export const search = (query, types, graph = null) =>
+  request("/search", json("POST", { query, limit: 10, types: types.length ? types : null, graph }));
+export const ask = (query, types, graph = null) =>
+  request("/ask", json("POST", { query, types: types.length ? types : null, graph }));
 export const getSuggestions = () => request("/suggestions");
 export const getPassage = (documentId, parentId) => request(`/documents/${documentId}/passages/${parentId}`);
 export const ingestFiles = (files) => {
@@ -58,3 +59,7 @@ export async function watchEval(jobId, onUpdate) {
 }
 export const saveEvalQuestions = (questions) => request("/eval/questions", json("PUT", { questions }));
 export const checkEvalQuestions = (questions) => request("/eval/questions/check", json("POST", { questions }));
+export const getGraphStats = () => request("/graph/stats");
+export const rebuildGraph = () => request("/graph/rebuild", { method: "POST" });
+export const findEntities = (q) => request(`/graph/entities?q=${encodeURIComponent(q)}`);
+export const getEntity = (id) => request(`/graph/entity?id=${encodeURIComponent(id)}`);

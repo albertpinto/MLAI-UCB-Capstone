@@ -40,7 +40,14 @@ class Settings(BaseSettings):
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # a real cross-encoder (not the bi-encoder); "" leaves reranking out
     rerank_search: bool = True  # the Ask page re-orders its dense results with the cross-encoder (measured: better MRR and nDCG)
     rerank_candidates: int = 30  # results the cross-encoder re-scores; 20 to 30 measured about the same, more adds noise
+    graph_dir: Path = Path("data/graphs")  # the knowledge graph is saved here as <COLLECTION>.json, so a different index never loads another's graph
+    graph_aliases_file: Path | None = None  # optional JSON {"alias": "canonical entity"} to merge names the normaliser cannot, e.g. {"SC": "Supreme Court"}
+    graph_search: bool = False  # Ask/search also use chunks tied to the question's entities in the graph (off until the evaluation shows it helps)
     fine_tuned_model: str = ""  # path to the fine-tuned embedding model; "" leaves it out of the evaluation
+
+    @property
+    def graph_path(self) -> Path:
+        return self.graph_dir / f"{self.collection}.json"
 
 
 @lru_cache

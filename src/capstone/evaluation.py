@@ -7,17 +7,20 @@ ranked by its best chunk, and the metrics are computed on that section ranking.
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from rank_bm25 import BM25Okapi
 
+from . import graph as kg
 from .store import DEFAULT_MODEL
 
 RETRIEVERS = {
     "bm25": "BM25", "base": "Base MiniLM (un-tuned)", "tuned": "Fine-tuned MiniLM",
     "hybrid": "Hybrid (BM25 + base, RRF)", "rerank": "Hybrid + cross-encoder rerank", "base_rerank": "Base + cross-encoder rerank",
+    "base_graph": "Base + knowledge graph", "base_rerank_graph": "Base + knowledge graph + cross-encoder rerank",
 }
+NEEDS_GRAPH = ("base_graph", "base_rerank_graph")
 RRF_K = 60  # reciprocal rank fusion constant
 RERANK_TOP = 30  # chunks the cross-encoder re-scores
 MAX_CURVE_K = 20
@@ -29,6 +32,7 @@ class Corpus:
     texts: list[str]  # what is searched, per chunk: section heading + resolved text (as embedded at ingest)
     keys: list[str]  # the section each chunk belongs to, "document_id:parent_id"
     sections: dict[str, dict]  # key -> {section, page, text}
+    ids: list[tuple[str, int]] = field(default_factory=list)  # (document_id, chunk_id) per chunk, to find the chunks the graph points at
 
 
 def normalise(text: str) -> str:
@@ -36,13 +40,14 @@ def normalise(text: str) -> str:
 
 
 def load_corpus(store) -> Corpus:
-    texts, keys, sections = [], [], {}
+    texts, keys, sections, ids = [], [], {}, []
     for c in store.all_payloads("chunk"):
+        ids.append((c["document_id"], c["chunk_id"]))
         key = f"{c['document_id']}:{c['parent_id']}"
         texts.append((f"{c['section']}. " if c.get("section") else "") + c["content"])
         keys.append(key)
         sections.setdefault(key, {"section": c.get("section", ""), "page": c.get("page"), "text": c["parent_text"], "norm": normalise(c["parent_text"])})
-    return Corpus(texts, keys, sections)
+    return Corpus(texts, keys, sections, ids)
 
 
 def relevant_sections(corpus: Corpus, question: dict) -> set[str]:
@@ -97,6 +102,19 @@ def rrf_scorer(scorers: list):
     return lambda q: sum(1.0 / (RRF_K + positions(score(q))) for score in scorers)
 
 
+def graph_scorer(first, graph, corpus: Corpus, aliases=None):
+    """Graph-assisted retrieval: reciprocal rank fusion of `first`'s ranking with the chunks the question's entities lead to in the graph."""
+    at = {chunk: i for i, chunk in enumerate(corpus.ids)}
+
+    def score(q):
+        out = 1.0 / (kg.RRF_K + positions(first(q)))
+        for rank, (chunk, _) in enumerate(kg.graph_chunks(graph, kg.link_entities(graph, q, aliases), q)):
+            if chunk in at:
+                out[at[chunk]] += kg.GRAPH_WEIGHT / (kg.RRF_K + rank)
+        return out
+    return score
+
+
 def rerank_scorer(first, reranker, texts: list[str], top: int = RERANK_TOP):
     """A cross-encoder re-scores the first stage's top chunks; the rest keep the first stage's order, below them."""
     def score(q):
@@ -117,6 +135,7 @@ def default_reranker(name: str):
 def build_scorers(settings, corpus: Corpus, names: list[str], embedder_factory, reranker_factory=default_reranker) -> dict:
     """`embedder_factory(model_name)` gives an object with encode(list[str]) -> vectors; `reranker_factory(name)` one with predict(pairs)."""
     built = {}
+    graph, aliases = kg.load(settings.graph_path), kg.load_aliases(settings.graph_aliases_file)
 
     def get(name):
         if name not in built:
@@ -132,13 +151,18 @@ def build_scorers(settings, corpus: Corpus, names: list[str], embedder_factory, 
                 built[name] = rerank_scorer(get("hybrid"), reranker_factory(settings.rerank_model), corpus.texts, settings.rerank_candidates)
             elif name == "base_rerank":  # what the Ask page does: dense search, then a cross-encoder over its top results
                 built[name] = rerank_scorer(get("base"), reranker_factory(settings.rerank_model), corpus.texts, settings.rerank_candidates)
+            elif name == "base_graph":
+                built[name] = graph_scorer(get("base"), graph, corpus, aliases)
+            elif name == "base_rerank_graph":  # the graph adds candidates before the cross-encoder re-orders them
+                built[name] = rerank_scorer(get("base_graph"), reranker_factory(settings.rerank_model), corpus.texts, settings.rerank_candidates)
         return built[name]
 
     return {name: get(name) for name in names if name in available_retrievers(settings)}
 
 
 def available_retrievers(settings) -> list[str]:
-    return [n for n in RETRIEVERS if (n != "tuned" or settings.fine_tuned_model) and (n not in ("rerank", "base_rerank") or settings.rerank_model)]
+    return [n for n in RETRIEVERS if (n != "tuned" or settings.fine_tuned_model) and (n not in ("rerank", "base_rerank", "base_rerank_graph") or settings.rerank_model)
+            and (n not in NEEDS_GRAPH or settings.graph_path.is_file())]
 
 
 def load_questions(path) -> list[dict]:

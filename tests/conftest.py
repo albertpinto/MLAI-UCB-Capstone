@@ -60,7 +60,7 @@ class FakeLLM:
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(qdrant_url=":memory:", collection="test", docs_dir=tmp_path, groq_api_key="x", enrich_cache=None, eval_questions_file=tmp_path / "q.json", eval_results_file=tmp_path / "r.json", fine_tuned_model="")
+    return Settings(qdrant_url=":memory:", collection="test", docs_dir=tmp_path, groq_api_key="x", enrich_cache=None, eval_questions_file=tmp_path / "q.json", eval_results_file=tmp_path / "r.json", fine_tuned_model="", graph_dir=tmp_path / "graphs")
 
 
 @pytest.fixture

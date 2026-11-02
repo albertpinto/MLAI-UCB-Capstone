@@ -27,9 +27,9 @@ def main():
 
     print(f"{result['questions']} {args.split} questions, {result['chunks']} chunks in {result['sections']} sections", end="")
     print(f" ({len(result['unresolved'])} questions skipped: evidence not found in the index)\n" if result["unresolved"] else "\n")
-    print(f"{'retriever':<28} {f'Recall@{args.k}':>9} {'MRR':>7} {f'nDCG@{args.k}':>8}")
+    print(f"{'retriever':<46} {f'Recall@{args.k}':>9} {'MRR':>7} {f'nDCG@{args.k}':>8}")
     for r in result["retrievers"].values():
-        print(f"{r['label']:<28} {r['recall']:>9.3f} {r['mrr']:>7.3f} {r['ndcg']:>8.3f}")
+        print(f"{r['label']:<46} {r['recall']:>9.3f} {r['mrr']:>7.3f} {r['ndcg']:>8.3f}")
 
 
 if __name__ == "__main__":

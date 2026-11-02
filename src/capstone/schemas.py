@@ -13,12 +13,14 @@ class SearchRequest(BaseModel):
     limit: int = Field(10, description="Maximum number of results")
     types: list[str] | None = Field(None, description="Only these point types: chunk, qa_pair, topic, summary. Omit for all")
     topics: list[str] | None = Field(None, description="Only points tagged with these topics. Omit for all")
+    graph: bool | None = Field(None, description="Also use chunks tied to the question's entities in the knowledge graph. Omit to follow `GRAPH_SEARCH`")
 
 
 class AskRequest(BaseModel):
     query: str = Field(description="The question, in everyday language", examples=["What are my fundamental rights?"])
     types: list[str] | None = Field(None, description="Only use these point types as context. Omit for all")
     topics: list[str] | None = Field(None, description="Only use points tagged with these topics. Omit for all")
+    graph: bool | None = Field(None, description="Also use chunks tied to the question's entities in the knowledge graph. Omit to follow `GRAPH_SEARCH`")
 
 
 class EvalQuestion(BaseModel):
