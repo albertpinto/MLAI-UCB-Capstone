@@ -10,7 +10,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
+    llm_max_concurrent: int = 4
+    llm_min_interval: float = 0.0
 
     qdrant_url: str = "http://localhost:6335"
     collection: str = "constitution_india"

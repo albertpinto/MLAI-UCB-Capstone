@@ -47,7 +47,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
             reranker = (reranker_factory or default_reranker)(settings.rerank_model) if settings.rerank_search and settings.rerank_model else None
             store_ = Store(settings.qdrant_path or settings.qdrant_url, settings.collection, Embedder(settings.embed_model, settings.embed_device, settings.embed_threads), reranker, settings.rerank_candidates)
         app.state.store = store or store_
-        app.state.llm = llm or LLM(settings.groq_api_key, settings.groq_model)
+        app.state.llm = llm or LLM(settings.groq_api_key, settings.groq_model, settings.llm_max_concurrent, settings.llm_min_interval)
         app.state.graph = kg.load(settings.graph_path)
         flusher = asyncio.create_task(flush_loop()) if settings.document_ttl_days else None
         yield
