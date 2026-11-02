@@ -14,7 +14,12 @@ from rank_bm25 import BM25Okapi
 
 from .store import DEFAULT_MODEL
 
-RETRIEVERS = {"bm25": "BM25", "base": "Base MiniLM (un-tuned)", "tuned": "Fine-tuned MiniLM"}
+RETRIEVERS = {
+    "bm25": "BM25", "base": "Base MiniLM (un-tuned)", "tuned": "Fine-tuned MiniLM",
+    "hybrid": "Hybrid (BM25 + base, RRF)", "rerank": "Hybrid + cross-encoder rerank",
+}
+RRF_K = 60  # reciprocal rank fusion constant
+RERANK_TOP = 30  # chunks the cross-encoder re-scores
 MAX_CURVE_K = 20
 TOP_SHOWN = 5
 
@@ -79,21 +84,59 @@ def dense_scorer(model: str, embedder, texts: list[str]):
     return lambda q: _vectors[key] @ np.array(embedder.encode([q])[0])
 
 
-def build_scorers(settings, corpus: Corpus, names: list[str], embedder_factory) -> dict:
-    """`embedder_factory(model_name)` gives an object with encode(list[str]) -> vectors."""
-    scorers = {}
-    for name in names:
-        if name == "bm25":
-            scorers[name] = bm25_scorer(corpus.texts)
-        elif name == "base":
-            scorers[name] = dense_scorer(DEFAULT_MODEL, embedder_factory(DEFAULT_MODEL), corpus.texts)
-        elif name == "tuned" and settings.fine_tuned_model:
-            scorers[name] = dense_scorer(settings.fine_tuned_model, embedder_factory(settings.fine_tuned_model), corpus.texts)
-    return scorers
+def positions(scores) -> np.ndarray:
+    """Rank of every item (0 = best) under `scores`."""
+    order = np.argsort(-np.asarray(scores))
+    ranks = np.empty(len(order))
+    ranks[order] = np.arange(len(order))
+    return ranks
+
+
+def rrf_scorer(scorers: list):
+    """Reciprocal rank fusion: each retriever votes 1 / (60 + rank) for every chunk."""
+    return lambda q: sum(1.0 / (RRF_K + positions(score(q))) for score in scorers)
+
+
+def rerank_scorer(first, reranker, texts: list[str], top: int = RERANK_TOP):
+    """A cross-encoder re-scores the first stage's top chunks; the rest keep the first stage's order, below them."""
+    def score(q):
+        base = np.asarray(first(q), dtype=float)
+        best = np.argsort(-base)[:top]
+        out = base - base.max() - 1e6
+        out[best] = reranker.predict([(q, texts[i]) for i in best])
+        return out
+    return score
+
+
+def default_reranker(name: str):
+    from sentence_transformers import CrossEncoder
+
+    return CrossEncoder(name, device="cpu")
+
+
+def build_scorers(settings, corpus: Corpus, names: list[str], embedder_factory, reranker_factory=default_reranker) -> dict:
+    """`embedder_factory(model_name)` gives an object with encode(list[str]) -> vectors; `reranker_factory(name)` one with predict(pairs)."""
+    built = {}
+
+    def get(name):
+        if name not in built:
+            if name == "bm25":
+                built[name] = bm25_scorer(corpus.texts)
+            elif name == "base":
+                built[name] = dense_scorer(DEFAULT_MODEL, embedder_factory(DEFAULT_MODEL), corpus.texts)
+            elif name == "tuned":
+                built[name] = dense_scorer(settings.fine_tuned_model, embedder_factory(settings.fine_tuned_model), corpus.texts)
+            elif name == "hybrid":
+                built[name] = rrf_scorer([get("bm25"), get("base")])
+            elif name == "rerank":
+                built[name] = rerank_scorer(get("hybrid"), reranker_factory(settings.rerank_model), corpus.texts)
+        return built[name]
+
+    return {name: get(name) for name in names if name in available_retrievers(settings)}
 
 
 def available_retrievers(settings) -> list[str]:
-    return [n for n in RETRIEVERS if n != "tuned" or settings.fine_tuned_model]
+    return [n for n in RETRIEVERS if (n != "tuned" or settings.fine_tuned_model) and (n != "rerank" or settings.rerank_model)]
 
 
 def load_questions(path) -> list[dict]:

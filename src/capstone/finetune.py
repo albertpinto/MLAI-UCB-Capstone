@@ -10,11 +10,8 @@ import random
 
 import numpy as np
 
+from .chunking import part_key as part_of
 from .evaluation import load_corpus, relevant_sections
-
-
-def part_of(section: str) -> str:
-    return (section or "(no heading)").split(" › ")[0]
 
 
 def held_out_parts(corpus, questions: list[dict]) -> set[str]:

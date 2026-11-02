@@ -124,6 +124,11 @@ def _docling_parents(name: str, data: bytes, settings: Settings) -> list[Parent]
     document = _converter(settings.docling_threads).convert(DocumentStream(name=name, stream=BytesIO(data))).document
     items = list(document.iterate_items())
     running, titles = page_headers(items)
+    names: dict[str, str] = {}  # Part key -> its longest label in the document: the name is not always on the heading line
+    for item, _ in items:
+        found = _part((getattr(item, "text", "") or "").strip()) if _label(item) == "section_header" else None
+        if found:
+            names[found[0]] = max(names.get(found[0], ""), found[1], key=len)
     parents: list[Parent] = []
     headings: list[str] = []
     parts: list[str] = []
@@ -148,7 +153,7 @@ def _docling_parents(name: str, data: bytes, settings: Settings) -> list[Parent]
             if info:
                 if info[0] != part_key:
                     flush()
-                    part_key, part, headings = info[0], info[1], []
+                    part_key, part, headings = info[0], names.get(info[0], info[1]), []
             else:
                 if sum(map(len, parts)) >= MIN_PARENT_CHARS:
                     flush()

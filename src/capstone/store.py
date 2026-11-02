@@ -4,7 +4,7 @@ from pathlib import Path
 
 from qdrant_client import QdrantClient, models
 
-from .chunking import is_contents, reflow
+from .chunking import is_contents, part_key, reflow
 
 logger = logging.getLogger(__name__)
 
@@ -162,9 +162,12 @@ class Store:
         counts = {t: self.client.count(self.collection, count_filter=models.Filter(must=[_equals("type", t)]), exact=True).count for t in TYPES}
         chunks = self.all_payloads("chunk")
         per_part: dict[str, int] = {}
+        names: dict[str, str] = {}  # part key -> its longest label, since the name is not always on the heading line
         sizes: dict[int, int] = {}
         for c in chunks:
-            part = (c.get("section") or "(no heading)").split(" › ")[0]
+            head = (c.get("section") or "(no heading)").split(" › ")[0]
+            part = part_key(head)
+            names[part] = max(names.get(part, ""), head, key=len)
             per_part[part] = per_part.get(part, 0) + 1
             bucket = len(c.get("content", "").split()) // 10 * 10
             sizes[bucket] = sizes.get(bucket, 0) + 1
@@ -172,7 +175,7 @@ class Store:
             "points": counts,
             "documents": len({c["document_id"] for c in chunks}),
             "parents": len({(c["document_id"], c["parent_id"]) for c in chunks}),
-            "chunks_per_part": sorted(({"part": k, "chunks": v} for k, v in per_part.items()), key=lambda r: -r["chunks"]),
+            "chunks_per_part": sorted(({"part": names[k], "chunks": v} for k, v in per_part.items()), key=lambda r: -r["chunks"]),
             "child_words": [{"from": k, "to": k + 9, "count": v} for k, v in sorted(sizes.items())],
         }
 

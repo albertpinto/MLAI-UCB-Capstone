@@ -14,14 +14,14 @@ from .answer import answer_question
 from .ingest import IngestResult, ingest_text
 from .llm import LLM
 from .parsing import parents_from_file
-from .evaluation import RETRIEVERS, available_retrievers, build_scorers, load_corpus, load_questions, run_evaluation
+from .evaluation import RETRIEVERS, default_reranker, available_retrievers, build_scorers, load_corpus, load_questions, run_evaluation
 from .schemas import AskRequest, EvalQuestions, EvalRun, SearchRequest, TextDocument
 from .store import Embedder, Store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
-def create_app(settings: Settings | None = None, store: Store | None = None, llm=None, embedder_factory=None) -> FastAPI:
+def create_app(settings: Settings | None = None, store: Store | None = None, llm=None, embedder_factory=None, reranker_factory=None) -> FastAPI:
     """Build the app. Store, LLM and the evaluation's embedders are created once at startup unless injected (tests do)."""
     settings = settings or get_settings()
     jobs: dict[str, dict] = {}
@@ -229,7 +229,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
 
     @app.post("/api/eval/run", tags=["Evaluation"], summary="Run the retrieval evaluation", responses={200: {"content": {"application/json": {"example": {"job_id": "9f0c1c0e-…"}}}}})
     def eval_run(body: EvalRun, background: BackgroundTasks):
-        """Starts a background job that scores the chosen retrievers (BM25, the un-tuned MiniLM, and the fine-tuned model when `FINE_TUNED_MODEL` is set) on the labelled questions, using Recall@k, MRR and nDCG@k at section level. Poll `GET /api/eval/jobs/{id}`; the finished result is stored and returned by `GET /api/eval/results`. Returns 400 for an unknown retriever or when no questions exist."""
+        """Starts a background job that scores the chosen retrievers (BM25, the un-tuned MiniLM, the fine-tuned model when `FINE_TUNED_MODEL` is set, hybrid BM25 + dense with reciprocal rank fusion, and a cross-encoder reranker over the hybrid results) on the labelled questions, using Recall@k, MRR and nDCG@k at section level. Poll `GET /api/eval/jobs/{id}`; the finished result is stored and returned by `GET /api/eval/results`. Returns 400 for an unknown retriever or when no questions exist."""
         names = body.retrievers or available_retrievers(settings)
         unknown = [n for n in names if n not in RETRIEVERS or n not in available_retrievers(settings)]
         if unknown:
@@ -244,7 +244,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
             try:
                 corpus = load_corpus(app.state.store)
                 job["message"] = "Embedding the chunks (first run only)"
-                scorers = build_scorers(settings, corpus, names, embedder_for)
+                scorers = build_scorers(settings, corpus, names, embedder_for, reranker_factory or default_reranker)
                 def progress(done, total, label):
                     job.update(done=done, total=total, message=f"Scored {label}")
                 result = run_evaluation(corpus, load_questions(settings.eval_questions_file), scorers, body.k, body.split, progress)

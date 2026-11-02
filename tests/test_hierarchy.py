@@ -307,3 +307,16 @@ def test_part_headings_are_recognised_in_any_form_and_even_when_short(monkeypatc
     with_docling(monkeypatch, items)
     parents = parents_from_file("c.pdf", b"x", Settings(qdrant_url=":memory:", parent_chars=5000))
     assert [p.section for p in parents] == ["Part III – Fundamental Rights", "Part IV – Directive Principles"]
+
+
+def test_a_part_keeps_one_label_even_if_its_name_appears_on_a_later_heading(monkeypatch):
+    from capstone.chunking import part_key
+
+    assert part_key("Part V – The Union › Article 52") == "Part V" and part_key("Part V") == "Part V" and part_key("") == "(no heading)"
+    body = "Every citizen has the right to speak freely and to assemble peaceably in public. " * 8
+    items = [item("section_header", "PART V", page=1), item("text", body, page=1),
+             item("section_header", "PART VI", page=2), item("text", body, page=2),
+             item("section_header", "(Part V.-The Union)", page=3), item("text", body, page=3)]
+    with_docling(monkeypatch, items)
+    parents = parents_from_file("c.pdf", b"x", Settings(qdrant_url=":memory:", parent_chars=5000))
+    assert [p.section for p in parents] == ["Part V – The Union", "Part VI", "Part V – The Union"]

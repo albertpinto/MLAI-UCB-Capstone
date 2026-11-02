@@ -24,6 +24,13 @@ class FakeEmbedder:
         return vectors
 
 
+class FakeReranker:
+    """Scores a (query, text) pair by the words they share. No model download."""
+
+    def predict(self, pairs):
+        return [float(len(set(q.lower().split()) & set(t.lower().split()))) for q, t in pairs]
+
+
 @pytest.fixture(autouse=True)
 def offline_splitter(monkeypatch):
     """Children are cut at blank lines or single lines, so tests never load the Chonkie model."""
@@ -68,5 +75,5 @@ def llm():
 
 @pytest.fixture
 def client(settings, store, llm):
-    with TestClient(create_app(settings, store, llm, embedder_factory=lambda name: FakeEmbedder())) as c:
+    with TestClient(create_app(settings, store, llm, embedder_factory=lambda name: FakeEmbedder(), reranker_factory=lambda name: FakeReranker())) as c:
         yield c

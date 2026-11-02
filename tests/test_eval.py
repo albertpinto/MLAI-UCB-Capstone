@@ -47,15 +47,15 @@ def test_questions_run_and_results_over_the_api(client):
     ]
     assert client.put("/api/eval/questions", json={"questions": questions}).json() == {"saved": 4}
     listed = client.get("/api/eval/questions").json()
-    assert [q["id"] for q in listed["questions"]] == ["q1", "q2", "q3", "q4"] and [r["id"] for r in listed["retrievers"]] == ["bm25", "base"]
+    assert [q["id"] for q in listed["questions"]] == ["q1", "q2", "q3", "q4"] and [r["id"] for r in listed["retrievers"]] == ["bm25", "base", "hybrid", "rerank"]
     assert client.put("/api/eval/questions", json={"questions": questions + questions[:1]}).status_code == 400  # duplicate id
 
     assert client.post("/api/eval/run", json={"retrievers": ["tuned"]}).status_code == 400  # no fine-tuned model configured
     job = wait_eval(client, client.post("/api/eval/run", json={"k": 3}).json()["job_id"])
-    assert job["status"] == "done" and job["done"] == job["total"] == 2
+    assert job["status"] == "done" and job["done"] == job["total"] == 4
 
     result = client.get("/api/eval/results").json()
-    assert set(result["retrievers"]) == {"bm25", "base"} and result["k"] == 3
+    assert set(result["retrievers"]) == {"bm25", "base", "hybrid", "rerank"} and result["k"] == 3
     assert result["questions"] == 2 and result["unresolved"] == ["q4"]  # test split only; q4's evidence is nowhere
     assert result["retrievers"]["bm25"]["recall"] == 1.0 and len(result["retrievers"]["bm25"]["curve"]) == 20
     assert {r["id"] for r in result["per_question"]} == {"q1", "q2"} and all(r["ranks"]["bm25"] == 1 for r in result["per_question"])
@@ -108,3 +108,23 @@ def test_training_runs_and_saves_a_loadable_model(tmp_path):
 
     assert SentenceTransformer(str(tmp_path / "m"), device="cpu").encode(["hello"]).shape == (1, 384)
     assert logged and "loss" in logged[-1]
+
+
+def test_fusion_and_reranking_change_the_order_the_right_way():
+    import numpy as np
+    from capstone.evaluation import positions, rerank_scorer, rrf_scorer
+
+    assert list(positions([0.1, 0.9, 0.5])) == [2, 0, 1]
+    a = lambda q: np.array([0.9, 0.8, 0.1, 0.0])  # prefers chunk 0
+    b = lambda q: np.array([0.1, 0.9, 0.8, 0.0])  # prefers chunk 1, then 2
+    fused = rrf_scorer([a, b])("q")
+    assert int(np.argmax(fused)) == 1 and fused[3] == fused.min()  # chunk 1 is high in both; chunk 3 is last in both
+
+    class Prefers:
+        def predict(self, pairs):
+            return [1.0 if "right" in text else 0.0 for _, text in pairs]
+
+    texts = ["wrong a", "wrong b", "right one", "wrong c"]
+    rescored = rerank_scorer(a, Prefers(), texts, top=3)("q")
+    assert int(np.argmax(rescored)) == 2  # the cross-encoder lifted chunk 2 above the first stage's favourite
+    assert rescored[3] < rescored[:3].min()  # chunk 3 was not re-scored and stays below

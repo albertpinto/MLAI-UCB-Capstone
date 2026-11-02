@@ -74,3 +74,8 @@ def is_contents(text: str) -> bool:
         return False
     numbered = sum(1 for l in lines if _NUMBERED.match(l) and len(l) < 90)
     return numbered / len(lines) > 0.5
+
+
+def part_key(section: str) -> str:
+    """The top-level part of a section path, without its name: "Part V – The Union › Article 52" and "Part V" are both "Part V"."""
+    return (section or "(no heading)").split(" › ")[0].split(" – ")[0].strip()

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     eval_questions_file: Path = Path("eval/questions.json")  # labelled questions for the retrieval evaluation
     eval_results_file: Path = Path("eval/results.json")  # the last evaluation run, so the dashboard opens instantly
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # a real cross-encoder (not the bi-encoder); "" leaves reranking out
     fine_tuned_model: str = ""  # path to the fine-tuned embedding model; "" leaves it out of the evaluation
 
 

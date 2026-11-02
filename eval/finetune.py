@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--batch", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--max-pairs", type=int, default=None, help="use only this many pairs (a quick trial)")
     parser.add_argument("--out", default="models/finetuned-minilm")
     args = parser.parse_args()
@@ -25,7 +26,7 @@ def main():
     store = Store(settings.qdrant_url, settings.collection, base)
     triplets, held = build_triplets(store, load_questions(settings.eval_questions_file), base, args.max_pairs)
     print(f"{len(triplets)} training triplets; held out for testing: {', '.join(sorted(held)) or 'nothing'}")
-    train(triplets, DEFAULT_MODEL, args.out, args.epochs, args.batch, device=settings.embed_device, threads=settings.embed_threads)
+    train(triplets, DEFAULT_MODEL, args.out, args.epochs, args.batch, args.lr, device=settings.embed_device, threads=settings.embed_threads)
     print(f"Saved to {args.out}. Set FINE_TUNED_MODEL={args.out} to include it in the evaluation.")
 
 

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Download, Loader2, Play } from "lucide-react";
 import { getEvalQuestions, getEvalResults, getStats, runEval, watchEval } from "../api.js";
-import { Chart, RETRIEVER_COLOUR } from "../charts.jsx";
+import { Chart, RETRIEVER_COLOUR, SHORT } from "../charts.jsx";
 
 const TYPE_LABELS = { chunk: "Chunks", qa_pair: "Q&A pairs", factoid: "Factoids", triplet: "Triplets", topic: "Glossary", summary: "Summaries" };
 const pct = (v) => v.toFixed(3);
@@ -127,25 +127,26 @@ function Results({ r }) {
     <>
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Tile label="Questions scored" value={r.questions} note={r.unresolved.length ? `${r.unresolved.length} skipped: evidence not found` : `${r.sections} sections, ${r.chunks} chunks`} />
-        {tiles.map(([m, name]) => <Tile key={m} label={`Best ${name}`} value={pct(r.retrievers[best(m)][m])} note={r.retrievers[best(m)].label} />)}
+        {tiles.map(([m, name]) => <Tile key={m} label={`Best ${name}`} value={pct(r.retrievers[best(m)][m])} note={SHORT[best(m)]} />)}
       </div>
-      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+      <div className="mb-4 grid gap-4">
         <ChartCard title="Retrieval quality by retriever">
           <Chart
             label="Grouped bar chart of Recall, MRR and nDCG for each retriever"
             data={(t) => ids.map((id) => ({
-              type: "bar", name: r.retrievers[id].label, x: metricNames, y: tiles.map(([m]) => r.retrievers[id][m]),
-              text: tiles.map(([m]) => pct(r.retrievers[id][m])), textposition: "outside", textfont: { color: t.text }, cliponaxis: false,
+              type: "bar", name: SHORT[id], x: metricNames, y: tiles.map(([m]) => r.retrievers[id][m]),
+              text: tiles.map(([m]) => pct(r.retrievers[id][m])), textposition: "outside", textfont: { color: t.text, size: 11 }, cliponaxis: false,
               marker: { color: t[RETRIEVER_COLOUR[id]], line: { width: 2, color: t.panel } }, hovertemplate: "%{x}: %{y:.3f}<extra>" + r.retrievers[id].label + "</extra>",
             }))}
-            layout={() => ({ barmode: "group", bargap: 0.4, bargroupgap: 0.06, yaxis: { range: [0, 1.12], tickformat: ".1f" }, xaxis: {} })}
+            layout={() => ({ barmode: "group", bargap: 0.3, bargroupgap: 0.06, yaxis: { range: [0, 1.12], tickformat: ".1f" }, xaxis: {} })}
+            height={360}
           />
         </ChartCard>
         <ChartCard title="Recall as k grows">
           <Chart
             label="Line chart of Recall at k, for k from 1 to 20, per retriever"
             data={(t) => ids.map((id) => ({
-              type: "scatter", mode: "lines+markers", name: r.retrievers[id].label, x: r.retrievers[id].curve.map((_, i) => i + 1), y: r.retrievers[id].curve,
+              type: "scatter", mode: "lines+markers", name: SHORT[id], x: r.retrievers[id].curve.map((_, i) => i + 1), y: r.retrievers[id].curve,
               line: { color: t[RETRIEVER_COLOUR[id]], width: 2 }, marker: { size: 8, color: t[RETRIEVER_COLOUR[id]], line: { width: 2, color: t.panel } },
               hovertemplate: "Recall@%{x}: %{y:.3f}<extra>" + r.retrievers[id].label + "</extra>",
             }))}
@@ -171,9 +172,9 @@ function csv(r, ids) {
 }
 
 function RankCell({ rank, k }) {
-  if (rank == null) return <span className="rounded-md bg-bad/10 px-2 py-0.5 text-bad">miss</span>;
+  if (rank == null) return <span className="rounded-md bg-bad/10 px-2 py-0.5 text-bad">miss ✗</span>;
   const tone = rank === 1 ? "bg-ok/15 text-ok" : rank <= k ? "bg-soft text-accent" : "bg-bad/10 text-bad";
-  return <span className={`rounded-md px-2 py-0.5 tabular-nums ${tone}`}>{rank === 1 ? "1st" : `#${rank}`}{rank > k ? " (beyond k)" : ""}</span>;
+  return <span title={rank > k ? `Right section found at rank ${rank}, beyond k` : undefined} className={`rounded-md px-2 py-0.5 tabular-nums ${tone}`}>{rank === 1 ? "1st" : `#${rank}`}{rank > k ? " ✗" : ""}</span>;
 }
 
 function Questions({ r, ids }) {
@@ -196,8 +197,8 @@ function Questions({ r, ids }) {
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="hint"><tr>
-            <th className="py-2 pr-3 font-medium">Question</th>
-            {ids.map((i) => <th key={i} className="whitespace-nowrap px-3 py-2 font-medium"><i className="mr-1.5 inline-block size-2.5 rounded-sm" style={{ background: `var(--${RETRIEVER_COLOUR[i]})` }} />{r.retrievers[i].label}</th>)}
+            <th className="min-w-56 py-2 pr-3 font-medium">Question</th>
+            {ids.map((i) => <th key={i} className="whitespace-nowrap px-3 py-2 font-medium"><i className="mr-1.5 inline-block size-2.5 rounded-sm" style={{ background: `var(--${RETRIEVER_COLOUR[i]})` }} />{SHORT[i]}</th>)}
           </tr></thead>
           <tbody>
             {rows.map((q) => (
@@ -208,10 +209,10 @@ function Questions({ r, ids }) {
                 </tr>
                 {open === q.id && (
                   <tr className="bg-bg"><td colSpan={ids.length + 1} className="px-3 py-3">
-                    <p className="hint mb-2">Right section: {q.relevant.join(" | ")}</p>
-                    <div className="grid gap-3 md:grid-cols-3">
+                    <p className="hint mb-2">Right section: {q.relevant.join(" | ")}. ✗ = found beyond k or not found.</p>
+                    <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
                       {ids.map((i) => (
-                        <div key={i}><p className="mb-1 text-xs font-medium">{r.retrievers[i].label}: top {q.top[i].length}</p>
+                        <div key={i}><p className="mb-1 text-xs font-medium">{SHORT[i]}: top {q.top[i].length}</p>
                           <ol className="space-y-0.5 text-xs">
                             {q.top[i].map((t, n) => <li key={n} className={t.hit ? "font-medium text-ok" : "text-muted"}>{n + 1}. {t.section || "(no heading)"}{t.page ? `, p. ${t.page}` : ""}{t.hit ? " ✓ right section" : ""}</li>)}
                           </ol>
