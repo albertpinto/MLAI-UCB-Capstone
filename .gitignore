@@ -15,6 +15,7 @@ node_modules/
 frontend/dist/
 data/docs/*
 !data/docs/Constitution of India (2024).pdf
+!data/docs/Rika Pinto Resume.docx
 data/enrichment_cache.jsonl
 models/
 eval/results.json
