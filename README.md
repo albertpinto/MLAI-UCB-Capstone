@@ -25,6 +25,7 @@ docker compose up -d            # Qdrant on localhost:6335
 uv run uvicorn capstone.main:app --reload          # API on :8000 (the first start downloads the models)
 cd frontend && npm install && npm run dev          # UI on http://localhost:5173
 ```
+`./stop.sh` stops the API and UI started from this folder (Qdrant keeps running; `./stop.sh --all` stops it too, data is kept).
 Always run Python through `uv run`. `start.sh` is a bash script and needs Docker for Qdrant; it has not been tried on Windows.
 `data/docs/` holds the PDF and sample help articles for the "Ingest the docs folder" button. Ingesting a large PDF with real
 Groq calls takes tens of minutes (Groq's output-token rate limit is the bottleneck); LLM results are cached in `ENRICH_CACHE`, so a
