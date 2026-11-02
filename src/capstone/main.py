@@ -101,6 +101,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
         with ingest_lock, ThreadPoolExecutor(1) as parser:
             parsed = [parser.submit(parse, title, content) for _, title, content in docs]
             for (result, title, _), future in zip(docs, parsed):
+                result.status, result.stage = "running", "reading"
                 try:
                     parents, text = future.result()
                 except Exception as exc:

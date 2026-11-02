@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -35,6 +36,8 @@ class IngestResult:
     triplets: int = 0
     topics: int = 0
     error: str | None = None
+    stage: str = ""  # what it is doing now: reading | splitting | enriching | summarising | storing
+    enriched: int = 0  # chunks the LLM has finished, out of `chunks`; the counts above grow while this runs
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -81,7 +84,7 @@ def ingest_text(store: Store, llm, settings: Settings, title: str, text: str, re
             raise ValueError("Document has no text")
         file_hash = hashlib.sha256(text.encode()).hexdigest()
         if store.has_hash(file_hash):
-            result.status = "skipped"
+            result.status, result.stage = "skipped", ""
             return result
 
         document_id = str(uuid.uuid4())
@@ -90,13 +93,30 @@ def ingest_text(store: Store, llm, settings: Settings, title: str, text: str, re
         version = old["version"] + 1 if old else 1
         expires_at = now + settings.document_ttl_days * 86400 if settings.document_ttl_days else None  # None = never
         base = {"document_id": document_id, "title": title, "citation": title, "file_hash": file_hash, "version": version, "ingested_at": now, "expires_at": expires_at}
+        result.stage = "splitting"
         parents = parents or parents_from_text(text, settings.parent_chars)
         children = [(pid, parent, child) for pid, parent in enumerate(parents) for child in split_children(parent.text, settings)]
+        result.parents, result.chunks = len(parents), len(children)
 
         cache = EnrichmentCache(settings.enrich_cache) if settings.enrich_cache else None
+        result.stage = "enriching"
+        tally = threading.Lock()
+
+        def enrich(c):
+            e = enrich_child(llm, settings, c[1], c[2], cache)
+            with tally:  # the UI reads these while the job runs
+                result.enriched += 1
+                result.qa_pairs += len(e.qa_pairs)
+                result.factoids += len(e.factoids)
+                result.triplets += len(e.triplets)
+            return e
+
         with ThreadPoolExecutor(settings.llm_workers) as pool:
-            enriched = list(pool.map(lambda c: enrich_child(llm, settings, c[1], c[2], cache), children))
+            enriched = list(pool.map(enrich, children))
+        result.stage = "summarising"
         topics, summary = _topics_and_summary(llm, text)
+        result.topics = len(topics)
+        result.stage = "storing"
         terms = [t["term"] for t in topics]
 
         items = []
@@ -123,7 +143,7 @@ def ingest_text(store: Store, llm, settings: Settings, title: str, text: str, re
         if old:
             store.delete_document(old["document_id"])
         store.add(items)
-        result.status = "processed"
+        result.status, result.stage = "processed", "done"
         result.document_id = document_id
         result.version = version
         result.parents = len(parents)

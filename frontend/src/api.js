@@ -36,7 +36,7 @@ export async function watchJob(jobId, onUpdate) {
     const job = await getJob(jobId);
     onUpdate(job);
     if (job.status === "done") return job;
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 1000));
   }
 }
 export const getBranding = () => request("/branding");

@@ -36,6 +36,9 @@ export function UploadBox({ onDone, children }) {
 
   const upload = (fileList) => fileList.length && run(() => ingestFiles([...fileList]));
   const finished = items.filter((i) => !["queued", "running"].includes(i.status)).length;
+  const current = items.find((i) => i.status === "running");
+  // Overall progress: each document counts for the share of its chunks the LLM has finished.
+  const fraction = items.length ? items.reduce((sum, i) => sum + (["queued", "running"].includes(i.status) ? (i.chunks ? i.enriched / i.chunks : 0) : 1), 0) / items.length : 0;
 
   return (
     <>
@@ -55,8 +58,12 @@ export function UploadBox({ onDone, children }) {
       {children?.(run, running)}
       {running && (
         <div className="my-4" aria-live="polite">
-          <div className="h-1.5 overflow-hidden rounded-full bg-line"><div className={`h-full rounded-full bg-linear-to-r from-indigo-600 to-violet-600 transition-all ${items.length ? "" : "w-1/12 animate-pulse"}`} style={items.length ? { width: `${Math.max(8, (finished / items.length) * 100)}%` } : undefined} /></div>
-          <p className="hint mt-2">{items.length ? `${finished} of ${items.length} documents done. ` : ""}Large documents take a while: each section is read and enriched by the LLM.</p>
+          <div className="h-1.5 overflow-hidden rounded-full bg-line"><div className={`h-full rounded-full bg-linear-to-r from-indigo-600 to-violet-600 transition-all ${items.length ? "" : "w-1/12 animate-pulse"}`} style={items.length ? { width: `${Math.max(3, fraction * 100)}%` } : undefined} /></div>
+          <p className="hint mt-2">
+            {items.length ? `${finished} of ${items.length} documents done. ` : ""}
+            {current ? `${current.name}: ${STAGES[current.stage] ?? "working"}${current.stage === "enriching" ? ` (${current.enriched} of ${current.chunks} chunks)` : ""}. ` : ""}
+            Large documents take a while: each section is read and enriched by the LLM.
+          </p>
         </div>
       )}
       {error && <p className="my-3 rounded-xl border border-bad/30 bg-bad/10 p-3 text-bad" role="alert">{error}</p>}
@@ -80,7 +87,9 @@ export function UploadBox({ onDone, children }) {
   );
 }
 
+const STAGES = { reading: "reading the file", splitting: "splitting into sections and chunks", enriching: "enriching chunks with the LLM", summarising: "writing the summary and glossary", storing: "embedding and storing" };
+
 function StatusBadge({ item }) {
   const style = { processed: "bg-ok/15 text-ok", failed: "bg-bad/15 text-bad", running: "bg-soft text-accent", skipped: "bg-line text-muted" }[item.status] ?? "bg-line text-muted";
-  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${style}`} title={item.error ?? undefined}>{item.status}{item.error ? `: ${item.error.slice(0, 60)}` : ""}</span>;
+  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${style}`} title={item.error ?? undefined}>{item.status === "running" && item.stage ? item.stage : item.status}{item.error ? `: ${item.error.slice(0, 60)}` : ""}</span>;
 }

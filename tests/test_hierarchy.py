@@ -5,7 +5,7 @@ import pytest
 from capstone import parsing
 from capstone.config import Settings
 from capstone.enrich import EnrichmentCache, enrich_child, grounded, resolved_ok
-from capstone.ingest import ingest_text
+from capstone.ingest import IngestResult, ingest_text
 from capstone.parsing import Parent, garbled, parents_from_file, parents_from_text, split_children
 
 SETTINGS = Settings(qdrant_url=":memory:", parent_chars=300, child_words=40, child_min_words=8, enrich_cache=None)
@@ -320,3 +320,18 @@ def test_a_part_keeps_one_label_even_if_its_name_appears_on_a_later_heading(monk
     with_docling(monkeypatch, items)
     parents = parents_from_file("c.pdf", b"x", Settings(qdrant_url=":memory:", parent_chars=5000))
     assert [p.section for p in parents] == ["Part V – The Union", "Part VI", "Part V – The Union"]
+
+
+def test_progress_is_visible_while_a_document_is_ingested(store):
+    seen = []
+
+    class Watching(ScriptedLLM):
+        def json_call(self, system, user, retries=5):
+            seen.append((result.stage, result.chunks, result.enriched))
+            return super().json_call(system, user)
+
+    result = IngestResult(name="Guide")
+    llm = Watching({"qa_pairs": [{"question": "Q?", "answer": "A."}], "factoids": [], "triplets": []})
+    ingest_text(store, llm, SETTINGS, "Guide", "Click Add Brand. Then save.", result, [Parent("Click Add Brand. Then save.")])
+    assert seen[0][0] == "enriching" and seen[0][1] >= 1  # the chunk total is known before the first LLM call
+    assert result.stage == "done" and result.enriched == result.chunks and result.qa_pairs >= 1
