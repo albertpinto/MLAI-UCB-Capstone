@@ -63,8 +63,8 @@ def display_text(payload: dict) -> str:
 class Store:
     """One Qdrant collection holding chunk, qa_pair, topic and summary points."""
 
-    def __init__(self, url: str, collection: str, embedder, reranker=None, rerank_candidates: int = 30):
-        self.client = QdrantClient(location=url)  # ":memory:" works too (used by tests)
+    def __init__(self, url: "str | Path", collection: str, embedder, reranker=None, rerank_candidates: int = 30):
+        self.client = QdrantClient(path=str(url)) if isinstance(url, Path) else QdrantClient(location=url)  # a Path = data folder, no server; ":memory:" works too (used by tests)
         self.collection = collection
         self.embedder = embedder
         self.reranker = reranker  # a cross-encoder: predict([(query, text), ...]) -> scores
@@ -223,7 +223,14 @@ class Store:
     def documents(self) -> list[dict]:
         """One entry per document, taken from its first chunk."""
         firsts = self._scroll([_equals("type", "chunk"), _equals("chunk_id", 0)])
-        return [{k: p[k] for k in ("document_id", "title", "citation")} for p in firsts]
+        return [{**{k: p[k] for k in ("document_id", "title", "citation")}, "version": p.get("version", 1), "ingested_at": p.get("ingested_at"), "expires_at": p.get("expires_at")} for p in firsts]
+
+    def document_by_title(self, title: str) -> dict | None:
+        return next((d for d in self.documents() if d["title"] == title), None)
+
+    def expired(self, now: float) -> list[dict]:
+        """Documents whose time-to-live has run out. Documents stored without an expiry never appear."""
+        return [d for d in self.documents() if d["expires_at"] is not None and d["expires_at"] <= now]
 
     def topics(self) -> list[dict]:
         seen = {}

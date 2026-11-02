@@ -10,7 +10,7 @@ const TABS = [
 ];
 
 export default function Documents() {
-  const [tab, setTab] = useState("upload");
+  const [tab, setTab] = useState(() => (TABS.some(([id]) => id === new URLSearchParams(window.location.search).get("tab")) ? new URLSearchParams(window.location.search).get("tab") : "upload")); // ?tab=library opens that tab
   const [docs, setDocs] = useState([]);
   const [error, setError] = useState("");
 
@@ -107,7 +107,11 @@ function LibraryTab({ docs, refresh, setError }) {
               <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-soft text-accent"><FileText size={18} /></span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{d.title}</span>
-                <span className="block truncate text-xs text-muted">{d.document_id}</span>
+                <span className="block truncate text-xs text-muted">
+                  Version {d.version}
+                  {d.ingested_at && ` · stored ${new Date(d.ingested_at * 1000).toLocaleDateString()}`}
+                  {d.expires_at ? ` · expires ${new Date(d.expires_at * 1000).toLocaleDateString()}` : " · never expires"}
+                </span>
               </span>
               <button onClick={() => remove(d)} className="rounded-lg p-2 text-muted transition hover:bg-bad/10 hover:text-bad" aria-label={`Delete ${d.title}`}><Trash2 size={16} /></button>
             </li>

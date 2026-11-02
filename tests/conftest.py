@@ -40,8 +40,13 @@ def offline_splitter(monkeypatch):
 class FakeLLM:
     def __init__(self):
         self.prompts = []  # user messages of grounded-answer calls
+        self.supported = True  # what the quality checks say about generated items and answers
 
     def json_call(self, system, user, retries=3):
+        if "check generated material" in system:
+            return {"supported": self.supported, "reason": "checked"}
+        if "grade an answer" in system:
+            return {"faithful": self.supported, "relevant": True, "reason": "graded"}
         if "readable answers" in system:
             return {"matches": [{"n": 1, "answer": "A readable version."}, {"n": 2, "answer": "Another readable version."}]}
         if "numbered context" in system:
@@ -60,7 +65,7 @@ class FakeLLM:
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(qdrant_url=":memory:", collection="test", docs_dir=tmp_path, groq_api_key="x", enrich_cache=None, eval_questions_file=tmp_path / "q.json", eval_results_file=tmp_path / "r.json", fine_tuned_model="", graph_dir=tmp_path / "graphs")
+    return Settings(qdrant_url=":memory:", collection="test", docs_dir=tmp_path, groq_api_key="x", enrich_cache=None, eval_questions_file=tmp_path / "q.json", eval_results_file=tmp_path / "r.json", fine_tuned_model="", graph_dir=tmp_path / "graphs", quality_file=tmp_path / "quality.json", eval_unanswerable_file=tmp_path / "unanswerable.json")
 
 
 @pytest.fixture

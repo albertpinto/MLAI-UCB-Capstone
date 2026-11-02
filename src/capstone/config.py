@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     docs_dir: Path = Path("data/docs")
     suggested_questions_file: Path = Path("data/suggested_questions.json")  # pick list shown on the Ask page
 
+    document_ttl_days: int = 0  # a document stored from now on expires after this many days and is flushed; 0 = never
+    flush_interval_hours: int = 24  # how often the API flushes expired documents (only when DOCUMENT_TTL_DAYS is set); POST /api/documents/flush does it on demand
+    qdrant_path: Path | None = None  # a folder: Qdrant runs inside the API process and keeps its data there, so Docker is not needed (QDRANT_URL is then ignored)
+
     answer_results: int = 10  # passages given to the LLM as context
     answer_min_score: float = 0.25  # below this cosine score a passage is not relevant enough; with none left the answer abstains
 
@@ -37,6 +41,8 @@ class Settings(BaseSettings):
 
     eval_questions_file: Path = Path("eval/questions.json")  # labelled questions for the retrieval evaluation
     eval_results_file: Path = Path("eval/results.json")  # the last evaluation run, so the dashboard opens instantly
+    eval_unanswerable_file: Path = Path("eval/unanswerable.json")  # JSON list of questions the documents cannot answer; the answer evaluation checks the system abstains
+    quality_file: Path = Path("data/quality.json")  # the last artifact check (with a person's reviews) and answer evaluation
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # a real cross-encoder (not the bi-encoder); "" leaves reranking out
     rerank_search: bool = True  # the Ask page re-orders its dense results with the cross-encoder (measured: better MRR and nDCG)
     rerank_candidates: int = 30  # results the cross-encoder re-scores; 20 to 30 measured about the same, more adds noise

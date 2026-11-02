@@ -19,3 +19,5 @@ data/enrichment_cache.jsonl
 models/
 eval/results.json
 data/graphs/
+data/qdrant/
+data/quality.json

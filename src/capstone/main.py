@@ -1,5 +1,7 @@
+import asyncio
 import json
 import logging
+import time
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -16,7 +18,8 @@ from .llm import LLM
 from .parsing import parents_from_file
 from . import graph as kg
 from .evaluation import RETRIEVERS, default_reranker, available_retrievers, build_scorers, load_corpus, load_questions, relevant_sections, run_evaluation
-from .schemas import AskRequest, EvalQuestions, EvalRun, SearchRequest, TextDocument
+from . import quality
+from .schemas import AnswerRun, AskRequest, EvalQuestions, EvalRun, QualityRun, Review, SearchRequest, TextDocument
 from .store import Embedder, Store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -28,6 +31,8 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     jobs: dict[str, dict] = {}
     ingest_lock = threading.Lock()  # one ingestion at a time: the embedding model is shared
     eval_jobs: dict[str, dict] = {}
+    quality_jobs: dict[str, dict] = {}
+    quality_lock = threading.Lock()  # the quality file is read, changed and written back by jobs and by reviews
     embedders: dict[str, object] = {}
     aliases = kg.load_aliases(settings.graph_aliases_file)
 
@@ -40,11 +45,14 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     async def lifespan(app: FastAPI):
         if store is None:
             reranker = (reranker_factory or default_reranker)(settings.rerank_model) if settings.rerank_search and settings.rerank_model else None
-            store_ = Store(settings.qdrant_url, settings.collection, Embedder(settings.embed_model, settings.embed_device, settings.embed_threads), reranker, settings.rerank_candidates)
+            store_ = Store(settings.qdrant_path or settings.qdrant_url, settings.collection, Embedder(settings.embed_model, settings.embed_device, settings.embed_threads), reranker, settings.rerank_candidates)
         app.state.store = store or store_
         app.state.llm = llm or LLM(settings.groq_api_key, settings.groq_model)
         app.state.graph = kg.load(settings.graph_path)
+        flusher = asyncio.create_task(flush_loop()) if settings.document_ttl_days else None
         yield
+        if flusher:
+            flusher.cancel()
 
     app = FastAPI(
         title="Capstone RAG API",
@@ -64,6 +72,25 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
                      for d in store_.documents() if (text := kg.summary_text(graph, d["title"], d["document_id"]))]
         store_.replace_graph_summaries(summaries)
         return kg.stats(graph)
+
+    def flush_expired() -> list[dict]:
+        """Delete every document whose time-to-live has run out (the nightly flush), then rebuild the graph without them."""
+        with ingest_lock:
+            gone = app.state.store.expired(time.time())
+            for d in gone:
+                app.state.store.delete_document(d["document_id"])
+            if gone and app.state.graph is not None:
+                rebuild_graph()
+        return gone
+
+    async def flush_loop() -> None:
+        while True:
+            try:
+                for d in await asyncio.to_thread(flush_expired):
+                    logging.getLogger(__name__).info("Flushed expired document %s (version %s)", d["title"], d["version"])
+            except Exception:
+                logging.getLogger(__name__).exception("Flushing expired documents failed")
+            await asyncio.sleep(settings.flush_interval_hours * 3600)
 
     def run_job(job_id: str, docs: list[tuple[IngestResult, str, bytes | str]]) -> None:
         """docs: (result row, title, raw bytes to extract from, or text). Parsing the next file overlaps the LLM work on the current one."""
@@ -164,8 +191,13 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
 
     @app.get("/api/documents", tags=["Documents"], summary="List stored documents", responses={200: {"content": {"application/json": {"example": {"documents": [{"document_id": "56a545b7-…", "title": "Billing.txt"}]}}}}})
     def list_documents():
-        """Every document currently stored, with its id and title."""
+        """Every document currently stored, with its id, title, `version` (1 for the first copy; storing changed text under the same title replaces the document with version + 1), and `ingested_at` / `expires_at` (Unix seconds; `expires_at` is null when it never expires)."""
         return {"documents": app.state.store.documents()}
+
+    @app.post("/api/documents/flush", tags=["Documents"], summary="Delete expired documents", responses={200: {"content": {"application/json": {"example": {"flushed": [{"document_id": "56a545b7-…", "title": "Old policy.txt", "version": 1}]}}}}})
+    def flush_documents():
+        """Deletes every document whose time-to-live (`DOCUMENT_TTL_DAYS`, counted from when it was stored) has run out, with everything derived from it. The API also does this every `FLUSH_INTERVAL_HOURS` while a TTL is set. Documents stored without an expiry are never flushed."""
+        return {"flushed": [{k: d[k] for k in ("document_id", "title", "version")} for d in flush_expired()]}
 
     @app.get("/api/documents/{document_id}/passages/{parent_id}", tags=["Documents"], summary="Read one passage", responses={200: {"content": {"application/json": {"example": {
         "document_id": "7cd5ca08-…", "title": "Constitution of India (2024).pdf", "citation": "Constitution of India (2024).pdf", "section": "Part III › Right to Freedom",
@@ -313,6 +345,83 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     async def unhandled(_, exc: Exception):
         logging.getLogger(__name__).exception("Unhandled error")
         return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+    def quality_job(body_work) -> tuple[dict, callable]:
+        """A job row, and the function that runs `body_work(job)` and records how it ended (pass it to BackgroundTasks)."""
+        job_id = str(uuid.uuid4())
+        job = quality_jobs[job_id] = {"id": job_id, "status": "running", "done": 0, "total": 0, "error": None}
+
+        def work():
+            try:
+                body_work(job)
+                job["status"] = "done"
+            except Exception as exc:
+                logging.getLogger(__name__).exception("Quality job failed")
+                job.update(status="failed", error=str(exc))
+        return job, work
+
+    def progress_into(job):
+        return lambda done, total: job.update(done=done, total=total)
+
+    @app.post("/api/quality/artifacts/run", tags=["Quality"], summary="Check generated Q&A pairs and factoids", responses={200: {"content": {"application/json": {"example": {"job_id": "9f0c1c0e-…"}}}}})
+    def quality_artifacts_run(body: QualityRun, background: BackgroundTasks):
+        """Background job: a random sample of the generated items is checked by a second LLM pass against the chunk each came from (supported or not). Replaces the previous check but keeps a person's reviews of items that are checked again (same sample). Poll `GET /api/quality/jobs/{id}`."""
+        def body_work(job):
+            items = quality.check_artifacts(app.state.llm, app.state.store, body.kinds, body.sample, settings.llm_workers, progress=progress_into(job))
+            with quality_lock:
+                data = quality.load(settings.quality_file)
+                kept = {i["id"]: i["human"] for i in data.get("artifacts", {}).get("items", [])}
+                for i in items:
+                    i["human"] = kept.get(i["id"])
+                quality.save(settings.quality_file, {**data, "artifacts": {"checked_at": time.time(), "items": items}})
+        job, work = quality_job(body_work)
+        background.add_task(work)
+        return {"job_id": job["id"]}
+
+    @app.post("/api/quality/answers/run", tags=["Quality"], summary="Evaluate the answers", responses={200: {"content": {"application/json": {"example": {"job_id": "9f0c1c0e-…"}}}}})
+    def quality_answers_run(body: AnswerRun, background: BackgroundTasks):
+        """Background job: answers every labelled question of the split the way the Ask page does, and an LLM grades each answer against the context it was given (faithful? relevant?). Questions in `EVAL_UNANSWERABLE_FILE` should be answered with an abstention. Returns 400 when there are no labelled questions."""
+        questions = [q for q in load_questions(settings.eval_questions_file) if body.split == "all" or q.get("split", "test") == body.split]
+        if not questions:
+            raise HTTPException(400, "No labelled questions for that split")
+        unanswerable = json.loads(settings.eval_unanswerable_file.read_text()) if settings.eval_unanswerable_file.is_file() else []
+
+        def retrieve(question):
+            return app.state.store.with_parents(app.state.store.search(question, settings.answer_results, None, None, *graph_for(None)))
+
+        def body_work(job):
+            result = quality.evaluate_answers(app.state.llm, retrieve, questions, unanswerable, settings.answer_min_score, settings.llm_workers, progress_into(job))
+            with quality_lock:
+                quality.save(settings.quality_file, {**quality.load(settings.quality_file), "answers": result})
+        job, work = quality_job(body_work)
+        background.add_task(work)
+        return {"job_id": job["id"]}
+
+    @app.get("/api/quality/jobs/{job_id}", tags=["Quality"], summary="Quality job progress", responses={200: {"content": {"application/json": {"example": {"id": "9f0c1c0e-…", "status": "running", "done": 12, "total": 100, "error": None}}}}})
+    def quality_job_status(job_id: str):
+        """`status` is `running`, `done` or `failed` (then `error` says why). Returns 404 for an unknown id."""
+        if job_id not in quality_jobs:
+            raise HTTPException(404, "Unknown job")
+        return quality_jobs[job_id]
+
+    @app.get("/api/quality", tags=["Quality"], summary="Last quality results", responses={200: {"content": {"application/json": {"example": {
+        "artifacts": {"checked_at": 1760000000, "summary": {"qa_pair": {"items": 50, "llm_error_rate": 0.04, "human_error_rate": None}}, "items": ["…"]},
+        "answers": {"faithfulness": 0.96, "relevance": 0.93, "wrongly_abstained": 0.04, "correctly_abstained": 1.0, "rows": ["…"]}}}}}})
+    def quality_results():
+        """The last artifact check (each item with its source chunk, the LLM's verdict and any review by a person, plus error rates per kind) and the last answer evaluation. Empty parts are missing."""
+        with quality_lock:
+            data = quality.load(settings.quality_file)
+        if "artifacts" in data:
+            data["artifacts"]["summary"] = quality.artifact_summary(data["artifacts"]["items"])
+        return data
+
+    @app.put("/api/quality/artifacts/{item_id}/review", tags=["Quality"], summary="Mark a generated item correct or incorrect", responses={200: {"content": {"application/json": {"example": {"reviewed": "3f9a1c0d2b7e", "correct": False}}}}})
+    def quality_review(item_id: str, body: Review):
+        """Records a person's verdict on one checked item (`null` clears it). The error rate by review is the one to report; the LLM check only helps find the wrong ones. Returns 404 for an unknown item."""
+        with quality_lock:
+            if not quality.review(settings.quality_file, item_id, body.correct):
+                raise HTTPException(404, "Unknown item")
+        return {"reviewed": item_id, "correct": body.correct}
 
     @app.post("/api/graph/rebuild", tags=["Knowledge graph"], summary="Build the knowledge graph", responses={200: {"content": {"application/json": {"example": {"entities": 5212, "relations": 5416, "documents": 1}}}}})
     def graph_rebuild():

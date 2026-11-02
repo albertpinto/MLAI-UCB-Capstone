@@ -26,7 +26,12 @@ uv run uvicorn capstone.main:app --reload          # API on :8000 (the first sta
 cd frontend && npm install && npm run dev          # UI on http://localhost:5173
 ```
 `./stop.sh` stops the API and UI started from this folder (Qdrant keeps running; `./stop.sh --all` stops it too, data is kept).
-Always run Python through `uv run`. `start.sh` is a bash script and needs Docker for Qdrant; it has not been tried on Windows.
+Always run Python through `uv run`. `start.sh` is a bash script and needs Docker for Qdrant.
+**Without Docker (Windows, or a machine where Docker is a burden):** set `QDRANT_PATH=data/qdrant` in `.env`. Qdrant then runs inside the API and keeps the
+index in that folder (`start.ps1` / `stop.ps1` are the PowerShell versions of the scripts and skip Docker when it is set). To fill the folder from an index you
+already have in the Docker Qdrant: `uv run python -m capstone.export_index data/qdrant` (about 30 seconds for 18,000 points); the folder, `data/graphs/` and
+`data/enrichment_cache.jsonl` can be zipped and moved to another computer so it needs no ingest and no LLM calls. The PowerShell scripts and a Windows run have **not been tried**;
+the folder mode was tried on Linux (the API answered a real question from a copied index).
 `data/docs/` holds the PDF and sample help articles for the "Ingest the docs folder" button. Ingesting a large PDF with real
 Groq calls takes tens of minutes (Groq's output-token rate limit is the bottleneck); LLM results are cached in `ENRICH_CACHE`, so a
 repeated or resumed ingest is much faster.
@@ -38,6 +43,8 @@ repeated or resumed ingest is much faster.
 | **Dashboard** `/dashboard` | Run the retrieval evaluation and chart it (Plotly): Recall@k, MRR, nDCG@k per retriever, Recall-vs-k curve, per-question ranks with CSV export, index statistics. |
 | **Questions** `/questions` | Manage the labelled evaluation questions: add, edit, delete, train/test, import/export JSON, and see which section each question's evidence is found in. |
 | **Knowledge graph** `/graph` | Search an entity, see it and its neighbours as a network, read its triplets with the source passage of each. |
+| **Quality checks** `/quality` | Grade the answers (faithfulness, relevance, abstention) and check a sample of the generated Q&A pairs and factoids against their source chunks; mark each correct or incorrect and read the error rates. |
+| **User guide** `/guide` | Illustrated usage documentation, with screenshots (regenerate them with `scripts/screenshots.sh`). |
 | **API docs** `/api-docs` | The API reference (also at `:8000/docs`). |
 
 ## What is stored
@@ -54,7 +61,7 @@ One Qdrant collection (`COLLECTION`), one point per item, told apart by `type`:
 | `graph_summary` | one deterministic text per document describing its graph (top entities, common relations) | only when asked for |
 
 Every point has `document_id`, `title`, `citation`, `file_hash` and `topics`; chunk-derived points also have `parent_id`, `chunk_id`,
-`section` and `page`, which is how a small match leads back to its parent section. Dedup is by hash of the cleaned text.
+`section` and `page`, which is how a small match leads back to its parent section. Dedup is by hash of the cleaned text. Every point also carries the document's `version`, `ingested_at` and `expires_at`.
 LLM output is checked before it is stored: a reference rewrite must keep every number, facts must share most of their words with
 the source, triplet entities must appear in the text. Anything failing a check is dropped.
 
@@ -117,6 +124,23 @@ Built from the `triplet` points the LLM extracted per chunk, so it needs no extr
   (5,212 entities for 5,416 relations), which is part of why it adds nothing to retrieval here. It is useful for exploring the corpus.
 - **Not built:** a second graph evaluation variant for BM25/hybrid/fine-tuned (only the base and base + rerank pipelines have graph twins).
 
+## Documents: versions, expiry
+Storing the same title with changed text is an update: the new version is built first (so a failed update leaves the old one), then the old version is deleted and
+the new one stored as `version + 1`. `DOCUMENT_TTL_DAYS` (default 0 = never) sets an expiry on documents stored from then on; expired documents are deleted by a flush that
+runs every `FLUSH_INTERVAL_HOURS` while the API is up, or on demand with `POST /api/documents/flush`. This is a loop inside the API, not an operating-system cron job, so
+nothing is flushed while the API is stopped. The first Constitution ingest predates versions and counts as version 1 without an expiry.
+The document summary and glossary are written from four slices spread over the whole text (not just the first 12,000 characters).
+
+## Quality checks
+`src/capstone/quality.py`, results in `QUALITY_FILE`, page `/quality`.
+- **Answers:** each labelled test question is answered as Ask does; an LLM grades the answer against the passages it was given (faithful, relevant); questions in
+  `eval/unanswerable.json` (off-topic) should be refused. Latest run (28 test questions, 8 off-topic, Groq `llama-3.3-70b-versatile` as writer **and** judge):
+  faithfulness 100%, relevance 100%, wrongly abstained 0%, correctly abstained 100%. A judge from the same model family tends to be lenient, so read this as an upper bound.
+- **Generated artifacts:** a random sample (30 per kind in the latest run) is checked by a second LLM pass against its source chunk. It flagged 2 of 30 Q&A pairs and 2 of 30 factoids (6.7% each).
+  Looking at the four: one factoid is a real error (it says the Sixth Schedule where the source says the Seventh), one dropped half of "Union or State Commission", and two Q&A flags
+  are context from the section heading that the chunk itself lacks. **The error rate to report is the one from a person's review** (buttons on the page); none has been recorded yet,
+  and 30 items is a small sample.
+
 ## Fine-tune the embedding model (CPU is enough for MiniLM)
 ```bash
 uv run python eval/finetune.py --epochs 2          # writes models/finetuned-minilm (gitignored)
@@ -128,22 +152,21 @@ negatives). To *search* with the tuned model, set `EMBED_MODEL` to it, use a new
 
 ## Tests
 ```bash
-uv run pytest        # 69 tests; fakes for embeddings, reranker and LLM, in-memory Qdrant: no network, no model download
+uv run pytest        # 76 tests; fakes for embeddings, reranker and LLM, in-memory Qdrant: no network, no model download
 ```
 Frontend: `cd frontend && npm run build`. The UI has been checked in headless Chrome in light mode only (dark mode is wired but not looked at).
 
 ## Layout
 `src/capstone/`: `config` · `extract` · `chunking` · `parsing` (Docling parents, Chonkie children) · `enrich` (LLM per chunk) · `ingest` · `store` ·
-`graph` (knowledge graph) · `answer` (grounded answer) · `evaluation` · `finetune` · `schemas` · `main` (API).
-`frontend/src/pages/`: Ask, Documents, Dashboard, Questions, Graph, ApiDocs, Passage. `eval/`: command-line evaluation and fine-tuning, labelled questions.
+`graph` (knowledge graph) · `answer` (grounded answer) · `quality` (answer and artifact checks) · `export_index` · `evaluation` · `finetune` · `schemas` · `main` (API).
+`frontend/src/pages/`: Ask, Documents, Dashboard, Questions, Graph, Quality, Guide, ApiDocs, Passage. `scripts/screenshots.sh`: regenerates the guide's images. `eval/`: command-line evaluation and fine-tuning, labelled questions.
 `tests/`. `data/graphs/`, `models/`, `eval/results.json` and `.env` are not committed.
 
 ## Not done yet
-- Answer evaluation (faithfulness, answer relevance) and validation of the LLM-made Q&A against their source chunks, with an error rate.
-- Document versions with a time-to-live and a nightly flush; update is still delete and re-ingest by hand.
-- An independent, human-written question set; a larger test set.
-- Document-level summary and glossary are drawn from the first 12,000 characters of a document only.
+- An independent, human-written question set; a larger test set. All 62 questions were drafted by reading the text, so the evaluation is not independent.
+- A person's review of the generated Q&A pairs and factoids (the page is built; the error rate that counts is yours). The LLM-judged numbers above use the same model family as the writer.
+- Windows: `start.ps1` / `stop.ps1` and the Docker-free folder mode are untested on Windows.
+- Dark mode is wired but has not been looked at; the Quality, User guide and Questions pages were only checked in headless Chrome, light mode, without clicking through every control.
 - About 80 chunks start mid-sentence and about 30 are oversized (Chonkie cannot split inside a sentence).
-- The Part labels Docling gives are coarse and inconsistent in the existing index (the parser fix applies to a re-ingest), which makes the
-  fine-tuning hold-out wider than the test Parts alone.
-- Windows start script; the app needs Docker for Qdrant.
+- The Part labels Docling gives are coarse and inconsistent in the existing index (the parser fix applies to a re-ingest), which makes the fine-tuning hold-out wider than the test Parts alone.
+- Expiry only applies to documents stored after `DOCUMENT_TTL_DAYS` is set, and the flush runs inside the API (see above).

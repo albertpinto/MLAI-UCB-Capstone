@@ -39,3 +39,16 @@ class EvalRun(BaseModel):
     retrievers: list[str] | None = Field(None, description="bm25, base, tuned. Omit for all available", examples=[["bm25", "base"]])
     k: int = Field(5, ge=1, le=20, description="Cut-off for Recall@k and nDCG@k")
     split: Literal["test", "train", "all"] = Field("test", description="Which questions to score")
+
+
+class QualityRun(BaseModel):
+    kinds: list[Literal["qa_pair", "factoid"]] = Field(["qa_pair", "factoid"], description="Which generated items to check against their source chunk")
+    sample: int = Field(50, ge=1, le=1000, description="How many random items of each kind to check; every item costs one LLM call")
+
+
+class AnswerRun(BaseModel):
+    split: Literal["test", "train", "all"] = Field("test", description="Which labelled questions to answer and grade")
+
+
+class Review(BaseModel):
+    correct: bool | None = Field(description="true: the generated item is right; false: it is wrong; null: clear the verdict")

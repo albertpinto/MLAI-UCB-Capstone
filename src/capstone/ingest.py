@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
@@ -18,6 +19,7 @@ DOC_SYSTEM = (
     'Reply as JSON: {"topics": [{"term": "...", "definition": "..."}], "summary": "..."}'
 )
 DOC_INPUT_CHARS = 12000
+DOC_SAMPLES = 4  # a longer document is shown to the LLM as this many slices spread over the whole text, not just its first pages
 
 
 @dataclass
@@ -25,6 +27,7 @@ class IngestResult:
     name: str
     status: str = "queued"  # queued | running | processed | skipped | failed
     document_id: str | None = None
+    version: int = 1  # 2 or more: this replaced an earlier version of the document with the same title
     parents: int = 0
     chunks: int = 0
     qa_pairs: int = 0
@@ -37,9 +40,18 @@ class IngestResult:
         return asdict(self)
 
 
+def _sample(text: str) -> str:
+    """The whole text if it fits, else DOC_SAMPLES slices spread evenly from start to end."""
+    if len(text) <= DOC_INPUT_CHARS:
+        return text
+    size = DOC_INPUT_CHARS // DOC_SAMPLES
+    starts = [(len(text) - size) * i // (DOC_SAMPLES - 1) for i in range(DOC_SAMPLES)]
+    return "\n[...]\n".join(text[s:s + size] for s in starts)
+
+
 def _topics_and_summary(llm, text: str) -> tuple[list[dict], str]:
     try:
-        result = llm.json_call(DOC_SYSTEM, f"Document:\n{text[:DOC_INPUT_CHARS]}")
+        result = llm.json_call(DOC_SYSTEM, f"Document:\n{_sample(text)}")
     except Exception as exc:
         logger.error("Topic/summary generation failed: %s", exc)
         return [], ""
@@ -56,6 +68,9 @@ def _topics_in(text: str, terms: list[str]) -> list[str]:
 def ingest_text(store: Store, llm, settings: Settings, title: str, text: str, result: IngestResult | None = None, parents: list[Parent] | None = None) -> IngestResult:
     """Chunk (parents, then children), enrich with the LLM, embed and store one document. Skips text already stored.
 
+    A document with the same title but different text is an update: the new version is built first, then the old one is
+    deleted and the new one stored with the next version number, so a failed update leaves the old version in place.
+
     `parents` come from the document layout when the caller has it (PDF, DOCX); otherwise they are cut from `text`.
     """
     result = result or IngestResult(name=title)
@@ -70,7 +85,11 @@ def ingest_text(store: Store, llm, settings: Settings, title: str, text: str, re
             return result
 
         document_id = str(uuid.uuid4())
-        base = {"document_id": document_id, "title": title, "citation": title, "file_hash": file_hash}
+        now = time.time()
+        old = store.document_by_title(title)
+        version = old["version"] + 1 if old else 1
+        expires_at = now + settings.document_ttl_days * 86400 if settings.document_ttl_days else None  # None = never
+        base = {"document_id": document_id, "title": title, "citation": title, "file_hash": file_hash, "version": version, "ingested_at": now, "expires_at": expires_at}
         parents = parents or parents_from_text(text, settings.parent_chars)
         children = [(pid, parent, child) for pid, parent in enumerate(parents) for child in split_children(parent.text, settings)]
 
@@ -101,9 +120,12 @@ def ingest_text(store: Store, llm, settings: Settings, title: str, text: str, re
         if summary:
             items.append((summary, {**base, "type": "summary", "content": summary, "topics": _topics_in(summary, terms)}))
 
+        if old:
+            store.delete_document(old["document_id"])
         store.add(items)
         result.status = "processed"
         result.document_id = document_id
+        result.version = version
         result.parents = len(parents)
         result.chunks = len(children)
         result.qa_pairs = sum(len(e.qa_pairs) for e in enriched)

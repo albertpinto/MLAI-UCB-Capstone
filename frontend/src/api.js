@@ -63,3 +63,16 @@ export const getGraphStats = () => request("/graph/stats");
 export const rebuildGraph = () => request("/graph/rebuild", { method: "POST" });
 export const findEntities = (q) => request(`/graph/entities?q=${encodeURIComponent(q)}`);
 export const getEntity = (id) => request(`/graph/entity?id=${encodeURIComponent(id)}`);
+
+export const getQuality = () => request("/quality");
+export const runArtifactCheck = (sample, kinds = ["qa_pair", "factoid"]) => request("/quality/artifacts/run", json("POST", { sample, kinds }));
+export const runAnswerEval = (split = "test") => request("/quality/answers/run", json("POST", { split }));
+export const reviewArtifact = (id, correct) => request(`/quality/artifacts/${id}/review`, json("PUT", { correct }));
+export async function watchQualityJob(jobId, onUpdate) {
+  for (;;) {
+    const job = await request(`/quality/jobs/${jobId}`);
+    onUpdate(job);
+    if (job.status !== "running") return job;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+}

@@ -87,3 +87,50 @@ def test_several_files_in_one_job_are_all_processed_in_order(client):
     files = [("files", (f"g{i}.txt", f"Guide {i}\n\nTo add brand {i} click the Add Brand button.".encode(), "text/plain")) for i in range(3)]
     job = wait(client, client.post("/api/ingest/files", files=files).json()["job_id"])
     assert [(i["name"], i["status"]) for i in job["items"]] == [(f"g{n}.txt", "processed") for n in range(3)]
+
+
+def test_changed_text_under_the_same_title_replaces_the_document_with_a_new_version(client):
+    first = ingest(client, "Guide", DOC)
+    second = ingest(client, "Guide", DOC + "\n\nBrands can be archived.")
+    assert (first["version"], second["version"], second["status"]) == (1, 2, "processed")
+    docs = client.get("/api/documents").json()["documents"]
+    assert [(d["title"], d["version"]) for d in docs] == [("Guide", 2)] and docs[0]["document_id"] == second["document_id"]
+    assert client.post("/api/search", json={"query": "archived"}).json()["results"][0]["document_id"] == second["document_id"]
+    assert ingest(client, "Other", "Passwords\n\nReset them by email.")["version"] == 1  # another title is a new document, not an update
+
+
+def test_expired_documents_are_flushed_and_others_stay(client, settings, store):
+    settings.document_ttl_days = 1
+    ingest(client, "Short lived", DOC)
+    settings.document_ttl_days = 0
+    ingest(client, "Forever", "Passwords\n\nReset them by email.")
+    docs = {d["title"]: d for d in client.get("/api/documents").json()["documents"]}
+    assert docs["Short lived"]["expires_at"] and docs["Forever"]["expires_at"] is None
+    assert client.post("/api/documents/flush").json() == {"flushed": []}  # not due yet
+    from unittest.mock import patch
+    with patch("capstone.main.time.time", return_value=docs["Short lived"]["expires_at"] + 1):
+        flushed = client.post("/api/documents/flush").json()["flushed"]
+    assert [f["title"] for f in flushed] == ["Short lived"]
+    assert [d["title"] for d in client.get("/api/documents").json()["documents"]] == ["Forever"]
+
+
+def test_long_documents_are_summarised_from_slices_spread_over_the_whole_text():
+    from capstone.ingest import DOC_INPUT_CHARS, _sample
+
+    text = "start " * 10000 + "middle " * 10000 + "end " * 10000
+    sample = _sample(text)
+    assert len(sample) < DOC_INPUT_CHARS + 50 and "start" in sample and "middle" in sample and "end" in sample
+    assert _sample("short") == "short"
+
+
+def test_the_index_can_live_in_a_folder_without_a_server(tmp_path, store):
+    from qdrant_client import QdrantClient
+
+    from capstone.export_index import export_index
+    from capstone.store import Store
+    from conftest import FakeEmbedder
+
+    store.add([("how do I add a brand", {"type": "chunk", "document_id": "d", "title": "T", "citation": "T", "file_hash": "h", "topics": [], "parent_id": 0, "chunk_id": 0, "content": "how do I add a brand", "section": "", "page": 1})])
+    assert export_index(store.client, "test", tmp_path / "q") == 1
+    local = Store(tmp_path / "q", "test", FakeEmbedder())  # a Path opens the data folder
+    assert local.search("add a brand", limit=3)[0]["content"] == "how do I add a brand"
