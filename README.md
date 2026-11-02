@@ -34,12 +34,25 @@ Everything is in `.env` (see `.env.example`, read only by `src/capstone/config.p
 the old one) and re-ingest.**
 
 ## Evaluate retrieval
+The **Dashboard** page (menu: Insights) runs and charts the evaluation: Recall@k, MRR and nDCG@k for BM25, the un-tuned
+MiniLM and, once you have one, the fine-tuned model, plus a Recall@k curve, a per-question table (CSV export) and index statistics.
+The same code runs from the command line:
 ```bash
-uv run --group eval python eval/eval.py --k 5
+uv run python eval/eval.py --k 5 --split test
 ```
-Compares BM25, stock MiniLM and `EMBED_MODEL` (if different) by Recall@k, MRR and nDCG@k over `eval/questions.json`
-(16 starter questions; add more, ideally written by someone who has not read the documents). It scores raw chunks only.
-Do not evaluate on the pairs you fine-tuned with.
+Questions live in `eval/questions.json`. Each has `evidence`, a phrase copied from the text that answers it; a section that
+contains it is the right answer, so labels survive a re-chunk. Each question is `train` or `test`, split by Part of the
+document. The shipped 62 were drafted by reading the Constitution, so treat them as a first set: add questions written by someone who
+has not read the text. Retrieval is scored on the chunks stored in the `COLLECTION` in `.env`.
+
+## Fine-tune the embedding model (CPU is enough for MiniLM)
+```bash
+uv run python eval/finetune.py --epochs 2          # writes models/finetuned-minilm
+# then put FINE_TUNED_MODEL=models/finetuned-minilm in .env and run the evaluation again
+```
+Training pairs are the generated Q&A questions with a hard negative (the most similar chunk from another Part), trained with
+`MultipleNegativesRankingLoss`. Parts that hold a `test` question are left out of training entirely (positives and negatives), so the test
+numbers are not leaked. To *search* with the tuned model, set `EMBED_MODEL` to it, use a new `COLLECTION` and re-ingest.
 
 ## Tests
 ```bash
@@ -47,12 +60,12 @@ uv run pytest        # fakes for embeddings and the LLM, in-memory Qdrant: no ne
 ```
 
 ## Layout
-`src/capstone/`: `config` · `extract` · `chunking` · `llm` · `store` · `ingest` · `schemas` · `main` (API).
-`frontend/`: Vite + React, three pages. `eval/`: the comparison script. `tests/`.
+`src/capstone/`: `config` · `extract` · `parsing` (Docling parents, Chonkie children) · `enrich` (LLM per chunk) · `ingest` · `store` · `answer` · `evaluation` · `finetune` · `schemas` · `main` (API).
+`frontend/`: Vite + React + Tailwind; pages Ask, Documents, Dashboard (Plotly), API docs. `eval/`: command-line wrappers for the evaluation and fine-tuning, and the labelled questions. `tests/`.
 
 ## Notes
 - Ingestion runs one document at a time in the background; progress is polled from `/api/jobs/{id}`. Jobs are kept
   in memory and are lost on restart; stored documents are not.
 - Each chunk costs one LLM call, so large documents take a while and may hit Groq rate limits (calls retry with backoff;
   a chunk that still fails is skipped and the document continues).
-- Fine-tuning is not part of this project yet; the old script is `rag-product/backend/src/compute/gte_model_training.py`.
+- The first evaluation is a baseline, not a final result: the questions were drafted from the text, and the Part labels Docling gives are coarse (a Part heading that appears on few pages is not always picked up), which makes the hold-out wider than the test Parts alone.

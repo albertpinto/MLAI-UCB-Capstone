@@ -147,6 +147,35 @@ class Store:
         )
         return [p.payload for p in points]
 
+    def all_payloads(self, kind: str) -> list[dict]:
+        """Every point of one type (without vectors), paged through the collection."""
+        out, offset = [], None
+        flt = models.Filter(must=[_equals("type", kind)])
+        while True:
+            points, offset = self.client.scroll(self.collection, scroll_filter=flt, limit=1000, offset=offset, with_payload=True)
+            out += [p.payload for p in points]
+            if offset is None:
+                return out
+
+    def stats(self) -> dict:
+        """Numbers for the dashboard: points per type, chunks per top-level section (Part), and child-chunk sizes in words."""
+        counts = {t: self.client.count(self.collection, count_filter=models.Filter(must=[_equals("type", t)]), exact=True).count for t in TYPES}
+        chunks = self.all_payloads("chunk")
+        per_part: dict[str, int] = {}
+        sizes: dict[int, int] = {}
+        for c in chunks:
+            part = (c.get("section") or "(no heading)").split(" › ")[0]
+            per_part[part] = per_part.get(part, 0) + 1
+            bucket = len(c.get("content", "").split()) // 10 * 10
+            sizes[bucket] = sizes.get(bucket, 0) + 1
+        return {
+            "points": counts,
+            "documents": len({c["document_id"] for c in chunks}),
+            "parents": len({(c["document_id"], c["parent_id"]) for c in chunks}),
+            "chunks_per_part": sorted(({"part": k, "chunks": v} for k, v in per_part.items()), key=lambda r: -r["chunks"]),
+            "child_words": [{"from": k, "to": k + 9, "count": v} for k, v in sorted(sizes.items())],
+        }
+
     def documents(self) -> list[dict]:
         """One entry per document, taken from its first chunk."""
         firsts = self._scroll([_equals("type", "chunk"), _equals("chunk_id", 0)])

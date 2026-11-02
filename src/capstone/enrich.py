@@ -19,13 +19,11 @@ logger = logging.getLogger(__name__)
 # Two calls, not one: when resolving references shares a prompt with the Q&A, facts and triplets, the model copies the text
 # unchanged (measured: 12 pronouns before, 12 after). A prompt that only resolves, and lists its replacements first, works.
 RESOLVE_SYSTEM = (
-    "You resolve references inside one passage (CHILD) of a larger section (PARENT) so that the CHILD can be read alone. Work in two steps. "
-    "Step 1, replacements: find every pronoun (he, his, she, her, it, its, they, their, them) and vague reference (such person, the said Act, "
+    "You resolve references inside one passage (CHILD) of a larger section (PARENT) so that the CHILD can be read alone. "
+    "Find every pronoun (he, his, she, her, it, its, they, their, them) and vague reference (such person, the said Act, "
     "the former, this article, that House) in the CHILD, and for each give the exact words from the CHILD and the actual name it refers to, "
-    "taken from the PARENT or the CHILD. "
-    "Step 2, resolved: copy the CHILD with every one of those replacements applied. Change nothing else; keep numbers and article references; "
-    "do not summarise; add no sentence. "
-    'Reply as JSON: {"replacements": [{"find": "his intention", "replace": "the President\'s intention"}], "resolved": "..."}'
+    "taken from the PARENT or the CHILD. Do not rewrite the CHILD; only list the replacements. "
+    'Reply as JSON: {"replacements": [{"find": "his intention", "replace": "the President\'s intention"}]}'
 )
 DERIVE_SYSTEM = (
     "You prepare one passage for a search index. Reply as JSON with these keys: qa_pairs, factoids, triplets. "
@@ -41,6 +39,13 @@ DERIVE_SYSTEM = (
 UNRESOLVED_OPENING = re.compile(r"^(this|that|these|those|it|they|he|she|such|the said|the former|the latter)\b", re.I)  # a fact must name its subject
 VAGUE_QUESTION = re.compile(r"\b(the|this|that) (text|passage|document|section|excerpt)\b|mentioned in", re.I)
 NUMBER = re.compile(r"\d+")
+# Only a chunk with one of these can need resolving; skipping the rest saves a call (about 4 in 5 chunks come back unchanged).
+REFERENCE = re.compile(
+    r"\b(he|his|him|she|her|hers|it|its|they|their|them|such \w+|the said|the former|the latter"
+    r"|(this|that|these|those) (article|clause|sub-clause|act|house|section|part|chapter|state|person|court|provision|schedule|right|law|authority|constitution))\b",
+    re.I,
+)
+MAX_REPLACE_WORDS = 12
 MAX_LENGTH_RATIO = 1.5  # resolving references adds words, but a rewrite much longer than the original has added content
 MIN_GROUNDED = 0.6  # share of a fact's words that must appear in the text it was drawn from
 
@@ -73,6 +78,18 @@ def resolved_ok(original: str, resolved: object) -> bool:
         return False
     ratio = len(resolved.split()) / max(len(original.split()), 1)
     return sorted(NUMBER.findall(original)) == sorted(NUMBER.findall(resolved)) and 0.7 <= ratio <= MAX_LENGTH_RATIO
+
+
+def apply_replacements(child: str, raw: object) -> str:
+    """Apply the LLM's {find, replace} list to `child` ourselves, so the text is never rewritten beyond those words."""
+    text = child
+    for r in sorted(raw if isinstance(raw, list) else [], key=lambda r: -len(str(r.get("find", ""))) if isinstance(r, dict) else 0):
+        if not isinstance(r, dict) or not isinstance(r.get("find"), str) or not isinstance(r.get("replace"), str):
+            continue
+        find, replace = r["find"].strip(), r["replace"].strip()
+        if find and replace and find != replace and len(replace.split()) <= MAX_REPLACE_WORDS:
+            text = re.sub(rf"(?<!\w){re.escape(find)}(?!\w)", lambda _: replace, text)
+    return text
 
 
 def _clean_pairs(raw: object) -> list[dict]:
@@ -147,12 +164,14 @@ def _ask(llm, cache: EnrichmentCache | None, system: str, user: str) -> dict:
 
 
 def enrich_child(llm, settings: Settings, parent: Parent, child: str, cache: EnrichmentCache | None = None) -> Enriched:
-    """Two LLM calls per child: resolve its references, then derive Q&A pairs, factoids and triplets from the resolved text.
+    """Up to two LLM calls per child: resolve its references (only if it has any), then derive Q&A pairs, factoids and triplets from the resolved text.
     Never raises: whatever fails is left out, and the child keeps its original text."""
     try:
         section = f"SECTION: {parent.section or '-'}\n\n"
-        resolved = _ask(llm, cache, RESOLVE_SYSTEM, f"{section}PARENT:\n{parent.text}\n\nCHILD:\n{child}").get("resolved")
-        content = resolved.strip() if resolved_ok(child, resolved) else child
+        content = child
+        if REFERENCE.search(child):
+            resolved = apply_replacements(child, _ask(llm, cache, RESOLVE_SYSTEM, f"{section}PARENT:\n{parent.text}\n\nCHILD:\n{child}").get("replacements"))
+            content = resolved if resolved_ok(child, resolved) else child
         derived = _ask(llm, cache, DERIVE_SYSTEM, f"{section}PASSAGE:\n{content}")
         source = f"{content}\n{parent.text}"  # facts may use words from the surrounding section
         return Enriched(content, child, _clean_pairs(derived.get("qa_pairs")), _clean_factoids(derived.get("factoids"), source), _clean_triplets(derived.get("triplets"), source))

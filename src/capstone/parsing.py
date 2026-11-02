@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 SKIP_LABELS = {"footnote", "page_header", "page_footer"}  # page furniture: kept out of the text so it cannot pollute chunks
 MIN_PARENT_CHARS = 400  # a heading starts a new parent only once the current one is at least this big
 RUNNING_MIN_PAGES = 4  # a heading repeated on this many pages is a page header, not a section heading
-RUNNING_MAX_SHARE = 0.3  # ...unless it is on most pages: that is the document title, which says nothing about a part
+RUNNING_MIN_SPAN = 0.5  # ...unless it recurs across half the document's page range: that is the document title, which says nothing about a part
+# Footnote lines Docling leaves in the body: "Ins. by ...", "by the Constitution (... Amendment) Act ...", "4 (w.e.f. 13-4-1978)."
+FOOTNOTE_LINE = re.compile(r"^(\d+\s*)?(Ins|Subs|Added|Re-numbered)\.(\s|$)|^(\d+\s*)?by the Constitution \(|w\.e\.f\.?[\s\d\-.)]*$", re.I)
+# A bare article number ("21." or "2 [21A.") that ends a piece belongs to the sentence after it: the splitter cut at its full stop.
+NUMBER_LINE = re.compile(r"^(\d+\s*\[\s*)?\d+[A-Z]{0,2}\.$")
 
 
 @dataclass
@@ -69,6 +73,28 @@ def _page(item) -> int | None:
     return item.prov[0].page_no if getattr(item, "prov", None) else None
 
 
+def _header_key(text: str) -> str:
+    """A running header with its page number removed: "THE CONSTITUTION OF INDIA 144" -> "THE CONSTITUTION OF INDIA"."""
+    return re.sub(r"^\d+\s+|\s+\d+$", "", text.strip())
+
+
+def strip_footnotes(text: str) -> str:
+    return "\n".join(line for line in text.split("\n") if not FOOTNOTE_LINE.search(line.strip()))
+
+
+PART = re.compile(r"^\(?\s*part\s+([ivxlc]+[a-z]?)\b[\s.\-–—:]*(.*?)\)?$", re.I)
+
+
+def _part(text: str) -> tuple[str, str] | None:
+    """"(Part V.-The Union)" and "PART V THE UNION" are both Part V: (key, label), whatever the case or punctuation."""
+    m = PART.match(text.strip())
+    if not m:
+        return None
+    name = m.group(2).strip(" .-–—")
+    name = name.title().replace(" Of ", " of ").replace(" And ", " and ").replace(" The ", " the ") if name.isupper() else name
+    return m.group(1).upper(), f"Part {m.group(1).upper()}" + (f" – {name}" if name else "")
+
+
 def _heading(text: str) -> str:
     """"(Part V.-The Union)" -> "Part V – The Union"."""
     text = re.sub(r"^\((.*)\)$", r"\1", text.strip())
@@ -84,10 +110,10 @@ def page_headers(items: list) -> tuple[set[str], set[str]]:
         if page is not None:
             all_pages.add(page)
             if _label(item) == "section_header":
-                pages[(item.text or "").strip()].add(page)
-    total = max(len(all_pages), 1)
-    repeated = {t for t, p in pages.items() if len(p) >= RUNNING_MIN_PAGES}
-    titles = {t for t in repeated if len(pages[t]) > RUNNING_MAX_SHARE * total}
+                pages[_header_key(item.text or "")].add(page)
+    total = max(max(all_pages, default=1) - min(all_pages, default=1), 1)
+    repeated = {t for t, p in pages.items() if t and len(p) >= RUNNING_MIN_PAGES}
+    titles = {t for t in repeated if max(pages[t]) - min(pages[t]) > RUNNING_MIN_SPAN * total}
     return repeated - titles, titles
 
 
@@ -101,7 +127,7 @@ def _docling_parents(name: str, data: bytes, settings: Settings) -> list[Parent]
     parents: list[Parent] = []
     headings: list[str] = []
     parts: list[str] = []
-    part, section, page = "", "", None
+    part, part_key, section, page = "", "", "", None
 
     def flush():
         nonlocal parts, section, page
@@ -113,13 +139,16 @@ def _docling_parents(name: str, data: bytes, settings: Settings) -> list[Parent]
     for item, level in items:
         label = _label(item)
         text = (getattr(item, "text", "") or "").strip()
-        if label in SKIP_LABELS or not text or re.fullmatch(r"[_\-=\s]{5,}", text) or text in titles:
+        if label != "section_header":
+            text = strip_footnotes(text).strip()
+        if label in SKIP_LABELS or not text or re.fullmatch(r"[_\-=\s]{5,}", text) or _header_key(text) in titles:
             continue
         if label == "section_header":
-            if text in running:  # "(Part V.-The Union)" on every page: it names the part, and a new part starts a new parent
-                if _heading(text) != part:
+            info = _part(text) or ((_heading(_header_key(text)),) * 2 if _header_key(text) in running else None)  # a Part heading starts a new Part, however rarely it repeats
+            if info:
+                if info[0] != part_key:
                     flush()
-                    part, headings = _heading(text), []
+                    part_key, part, headings = info[0], info[1], []
             else:
                 if sum(map(len, parts)) >= MIN_PARENT_CHARS:
                     flush()
@@ -157,9 +186,30 @@ def _cap(piece: str, limit: int, target: int) -> list[str]:
     return out + ([current] if current else [])
 
 
+def move_numbers(pieces: list[str]) -> list[str]:
+    """Carry a bare article number left at the end of a piece to the start of the next one."""
+    out, carry = [], ""
+    for i, piece in enumerate(pieces):
+        piece = f"{carry}\n{piece}".strip() if carry else piece
+        lines, carry = piece.split("\n"), ""
+        moved = []
+        while lines and NUMBER_LINE.match(lines[-1].strip()):
+            moved.insert(0, lines.pop().strip())
+        if moved and i < len(pieces) - 1:
+            carry = "\n".join(moved)
+        else:
+            lines += moved
+        if lines:
+            out.append("\n".join(lines))
+    if carry:
+        out.append(carry)
+    return out
+
+
 def split_children(parent_text: str, settings: Settings) -> list[str]:
     """Split a parent into child chunks at semantic boundaries, then merge pieces that are too small to embed well."""
     pieces = [c.text.strip() for c in _chunker(settings.child_words, settings.embed_model).chunk(parent_text) if c.text.strip()]
+    pieces = move_numbers(pieces)
     pieces = [small for piece in pieces for small in _cap(piece, settings.child_words * 2, settings.child_words)]
     children: list[str] = []
     for piece in pieces:

@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     chunk_overlap: int = 150
     llm_workers: int = 4
 
+    eval_questions_file: Path = Path("eval/questions.json")  # labelled questions for the retrieval evaluation
+    eval_results_file: Path = Path("eval/results.json")  # the last evaluation run, so the dashboard opens instantly
+    fine_tuned_model: str = ""  # path to the fine-tuned embedding model; "" leaves it out of the evaluation
+
 
 @lru_cache
 def get_settings() -> Settings:

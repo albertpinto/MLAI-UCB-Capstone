@@ -106,6 +106,7 @@ dependencies = [
     { name = "python-docx" },
     { name = "python-multipart" },
     { name = "qdrant-client" },
+    { name = "rank-bm25" },
     { name = "sentence-transformers" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -130,6 +131,7 @@ requires-dist = [
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "qdrant-client", specifier = ">=1.20.0" },
+    { name = "rank-bm25", specifier = ">=0.2.2" },
     { name = "sentence-transformers", specifier = ">=6.2.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]

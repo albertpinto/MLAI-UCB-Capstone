@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
@@ -13,17 +14,25 @@ from .answer import answer_question
 from .ingest import IngestResult, ingest_text
 from .llm import LLM
 from .parsing import parents_from_file
-from .schemas import AskRequest, SearchRequest, TextDocument
+from .evaluation import RETRIEVERS, available_retrievers, build_scorers, load_corpus, load_questions, run_evaluation
+from .schemas import AskRequest, EvalQuestions, EvalRun, SearchRequest, TextDocument
 from .store import Embedder, Store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
-def create_app(settings: Settings | None = None, store: Store | None = None, llm=None) -> FastAPI:
-    """Build the app. Store and LLM are created once at startup unless injected (tests do)."""
+def create_app(settings: Settings | None = None, store: Store | None = None, llm=None, embedder_factory=None) -> FastAPI:
+    """Build the app. Store, LLM and the evaluation's embedders are created once at startup unless injected (tests do)."""
     settings = settings or get_settings()
     jobs: dict[str, dict] = {}
     ingest_lock = threading.Lock()  # one ingestion at a time: the embedding model is shared
+    eval_jobs: dict[str, dict] = {}
+    embedders: dict[str, object] = {}
+
+    def embedder_for(name: str):
+        if name not in embedders:
+            embedders[name] = embedder_factory(name) if embedder_factory else Embedder(name, settings.embed_device, settings.embed_threads)
+        return embedders[name]
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -40,12 +49,16 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     )
 
     def run_job(job_id: str, docs: list[tuple[IngestResult, str, bytes | str]]) -> None:
-        """docs: (result row, title, raw bytes to extract from, or text)."""
-        with ingest_lock:
-            for result, title, content in docs:
+        """docs: (result row, title, raw bytes to extract from, or text). Parsing the next file overlaps the LLM work on the current one."""
+        def parse(title: str, content: bytes | str):
+            parents = None if isinstance(content, str) else parents_from_file(title, content, settings)
+            return parents, content if parents is None else "\n\n".join(p.text for p in parents)
+
+        with ingest_lock, ThreadPoolExecutor(1) as parser:
+            parsed = [parser.submit(parse, title, content) for _, title, content in docs]
+            for (result, title, _), future in zip(docs, parsed):
                 try:
-                    parents = None if isinstance(content, str) else parents_from_file(title, content, settings)
-                    text = content if parents is None else "\n\n".join(p.text for p in parents)
+                    parents, text = future.result()
                 except Exception as exc:
                     result.status, result.error = "failed", str(exc)
                     continue
@@ -190,6 +203,76 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     def topics():
         """The glossary of key topics the LLM extracted from all documents. Pass these names in the `topics` filter of `POST /api/search`."""
         return {"topics": app.state.store.topics()}
+
+    @app.get("/api/stats", tags=["Evaluation"], summary="Index statistics", responses={200: {"content": {"application/json": {"example": {
+        "points": {"chunk": 2362, "qa_pair": 4506, "factoid": 5975, "triplet": 5435, "topic": 7, "summary": 1}, "documents": 1, "parents": 547,
+        "chunks_per_part": [{"part": "Part III – Fundamental Rights", "chunks": 120}], "child_words": [{"from": 20, "to": 29, "count": 410}]}}}}})
+    def stats():
+        """Numbers behind the dashboard's index charts: how many points of each type are stored, how many chunks each Part of the document has, and how big the child chunks are (words, in buckets of 10)."""
+        return app.state.store.stats()
+
+    @app.get("/api/eval/questions", tags=["Evaluation"], summary="List labelled questions", responses={200: {"content": {"application/json": {"example": {"questions": [
+        {"id": "q-article-21", "question": "Can the government take away my life?", "evidence": ["procedure established by law"], "split": "test", "note": ""}], "retrievers": [{"id": "bm25", "label": "BM25"}]}}}}})
+    def eval_questions():
+        """The labelled evaluation questions from `EVAL_QUESTIONS_FILE`. Each carries `evidence`: phrases copied from the text that answers it. A section that contains one of them is the right answer, so labels still work after the document is re-chunked. `retrievers` lists what `POST /api/eval/run` can score (the fine-tuned model appears once `FINE_TUNED_MODEL` is set)."""
+        return {"questions": load_questions(settings.eval_questions_file), "retrievers": [{"id": n, "label": RETRIEVERS[n]} for n in available_retrievers(settings)]}
+
+    @app.put("/api/eval/questions", tags=["Evaluation"], summary="Replace the labelled questions", responses={200: {"content": {"application/json": {"example": {"saved": 60}}}}})
+    def save_eval_questions(body: EvalQuestions):
+        """Replaces the whole question list (this is also how you import a file). Ids must be unique. Mark each question `train` or `test`, splitting by Part of the document, so fine-tuning never sees a test question."""
+        ids = [q.id for q in body.questions]
+        if len(ids) != len(set(ids)):
+            raise HTTPException(400, "Question ids must be unique")
+        settings.eval_questions_file.parent.mkdir(parents=True, exist_ok=True)
+        settings.eval_questions_file.write_text(json.dumps([q.model_dump() for q in body.questions], indent=1, ensure_ascii=False))
+        return {"saved": len(ids)}
+
+    @app.post("/api/eval/run", tags=["Evaluation"], summary="Run the retrieval evaluation", responses={200: {"content": {"application/json": {"example": {"job_id": "9f0c1c0e-…"}}}}})
+    def eval_run(body: EvalRun, background: BackgroundTasks):
+        """Starts a background job that scores the chosen retrievers (BM25, the un-tuned MiniLM, and the fine-tuned model when `FINE_TUNED_MODEL` is set) on the labelled questions, using Recall@k, MRR and nDCG@k at section level. Poll `GET /api/eval/jobs/{id}`; the finished result is stored and returned by `GET /api/eval/results`. Returns 400 for an unknown retriever or when no questions exist."""
+        names = body.retrievers or available_retrievers(settings)
+        unknown = [n for n in names if n not in RETRIEVERS or n not in available_retrievers(settings)]
+        if unknown:
+            raise HTTPException(400, f"Unknown or unavailable retriever: {', '.join(unknown)}")
+        if not load_questions(settings.eval_questions_file):
+            raise HTTPException(400, "No labelled questions yet")
+        job_id = str(uuid.uuid4())
+        eval_jobs[job_id] = {"id": job_id, "status": "running", "done": 0, "total": len(names), "message": "Loading the index", "error": None}
+
+        def work():
+            job = eval_jobs[job_id]
+            try:
+                corpus = load_corpus(app.state.store)
+                job["message"] = "Embedding the chunks (first run only)"
+                scorers = build_scorers(settings, corpus, names, embedder_for)
+                def progress(done, total, label):
+                    job.update(done=done, total=total, message=f"Scored {label}")
+                result = run_evaluation(corpus, load_questions(settings.eval_questions_file), scorers, body.k, body.split, progress)
+                result["collection"] = settings.collection
+                settings.eval_results_file.parent.mkdir(parents=True, exist_ok=True)
+                settings.eval_results_file.write_text(json.dumps(result, ensure_ascii=False))
+                job["status"] = "done"
+            except Exception as exc:
+                logging.getLogger(__name__).exception("Evaluation failed")
+                job.update(status="failed", error=str(exc))
+
+        background.add_task(work)
+        return {"job_id": job_id}
+
+    @app.get("/api/eval/jobs/{job_id}", tags=["Evaluation"], summary="Evaluation job progress", responses={200: {"content": {"application/json": {"example": {"id": "9f0c1c0e-…", "status": "running", "done": 1, "total": 2, "message": "Scored BM25", "error": None}}}}})
+    def eval_job(job_id: str):
+        """Progress of an evaluation started with `POST /api/eval/run`: `status` is `running`, `done` or `failed` (then `error` says why). Returns 404 for an unknown id."""
+        if job_id not in eval_jobs:
+            raise HTTPException(404, "Unknown job")
+        return eval_jobs[job_id]
+
+    @app.get("/api/eval/results", tags=["Evaluation"], summary="Last evaluation results", responses={200: {"content": {"application/json": {"example": {
+        "k": 5, "split": "test", "questions": 40, "retrievers": {"bm25": {"label": "BM25", "recall": 0.55, "mrr": 0.41, "ndcg": 0.46, "curve": [0.3, 0.45]}},
+        "per_question": [{"id": "q-article-21", "question": "…", "ranks": {"bm25": 2}, "top": {"bm25": [{"section": "Part III", "page": 42, "hit": True}]}}]}}}}})
+    def eval_results():
+        """The most recent finished evaluation, or `{}` if none has run yet. `retrievers` holds the metrics and the Recall@k curve (k = 1 to 20) for each retriever; `per_question` has the rank each retriever gave the right section (`null` = not found) and its top results."""
+        path = settings.eval_results_file
+        return json.loads(path.read_text()) if path.is_file() else {}
 
     @app.exception_handler(Exception)
     async def unhandled(_, exc: Exception):

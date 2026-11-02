@@ -16,3 +16,5 @@ frontend/dist/
 data/docs/*
 !data/docs/Constitution of India (2024).pdf
 data/enrichment_cache.jsonl
+models/
+eval/results.json

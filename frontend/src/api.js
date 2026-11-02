@@ -40,3 +40,19 @@ export async function watchJob(jobId, onUpdate) {
 }
 export const getBranding = () => request("/branding");
 export const getOpenApi = () => request("/openapi.json");
+
+export const getStats = () => request("/stats");
+export const getEvalResults = () => request("/eval/results");
+export const getEvalQuestions = () => request("/eval/questions");
+export const runEval = (retrievers, k, split) => request("/eval/run", json("POST", { retrievers, k, split }));
+export const getEvalJob = (id) => request(`/eval/jobs/${id}`);
+
+// Poll an evaluation job until it finishes or fails, reporting progress on each tick.
+export async function watchEval(jobId, onUpdate) {
+  for (;;) {
+    const job = await getEvalJob(jobId);
+    onUpdate(job);
+    if (job.status !== "running") return job;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}

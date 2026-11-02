@@ -1,18 +1,560 @@
 [
-  {"question": "Why didn't my scheduled post go out?", "document": "Post Failures.txt"},
-  {"question": "How far ahead of the publish time do I need to schedule a post?", "document": "Post Failures.txt"},
-  {"question": "My account got locked, how many wrong passwords are allowed?", "document": "Login Attempts.txt"},
-  {"question": "I forgot my password, how do I get back in?", "document": "Password Help.txt"},
-  {"question": "How big can a single video file be on the Professional plan?", "document": "File Size Limits.txt"},
-  {"question": "Which image and video formats can I upload?", "document": "File Types Supported.txt"},
-  {"question": "How long can I be idle before I get signed out?", "document": "Timeout.txt"},
-  {"question": "How do I sign out of the app?", "document": "Logout.txt"},
-  {"question": "I can't connect my Facebook page, what do I need?", "document": "Facebook Account Add Issue.txt"},
-  {"question": "It says my organization already exists when I sign up, what should I do?", "document": "Organization Name Issue.txt"},
-  {"question": "How do I give a colleague access to our account?", "document": "Team Management.txt"},
-  {"question": "What is the difference between Admin and Staff users?", "document": "Team Management.txt"},
-  {"question": "Where can I see a calendar of my upcoming posts?", "document": "Scheduler.txt"},
-  {"question": "How do I see how well my social media posts performed?", "document": "Analytics.txt"},
-  {"question": "What subscription plans are available?", "document": "Billing.txt"},
-  {"question": "My upload keeps failing, what should I check?", "document": "Multimedia File Issues.txt"}
+ {
+  "id": "q01",
+  "question": "Can the government take away my life or personal freedom?",
+  "evidence": [
+   "except according to procedure established by law"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q02",
+  "question": "Does the law treat everyone equally?",
+  "evidence": [
+   "equality before the law or the equal protection of the laws"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q03",
+  "question": "Can I be treated differently because of my religion, caste or sex?",
+  "evidence": [
+   "shall not discriminate against any citizen on grounds only of religion, race, caste, sex, place of birth"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q04",
+  "question": "Is untouchability allowed?",
+  "evidence": [
+   "its practice in any form is forbidden"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q05",
+  "question": "What freedoms do citizens have, like speech and assembly?",
+  "evidence": [
+   "freedom of speech and expression b to assemble peaceably and without arms"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q06",
+  "question": "Can the police arrest me without telling me why?",
+  "evidence": [
+   "informed, as soon as may be, of the grounds for such arrest"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q07",
+  "question": "Can children be made to work in factories?",
+  "evidence": [
+   "No child below the age of fourteen years shall be employed to work in any factory"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q08",
+  "question": "Is forced labour or human trafficking banned?",
+  "evidence": [
+   "Traffic in human beings and begar and other similar forms of forced labour are prohibited"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q09",
+  "question": "Can someone be punished twice for the same crime?",
+  "evidence": [
+   "punished for the same offence more than once"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q10",
+  "question": "Can I be forced to testify against myself?",
+  "evidence": [
+   "compelled to be a witness against himself"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q11",
+  "question": "What does freedom of religion mean?",
+  "evidence": [
+   "equally entitled to freedom of conscience and the right freely to profess, practice and propagate religion"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q12",
+  "question": "Can minority communities run their own schools and colleges?",
+  "evidence": [
+   "shall have the right to establish and administer educational institutions of their choice"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q13",
+  "question": "Where can I go if my fundamental rights are violated?",
+  "evidence": [
+   "right to move the Supreme Court by appropriate proceedings for the enforcement of the rights"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q14",
+  "question": "Do children have a right to free schooling?",
+  "evidence": [
+   "free and compulsory education to all children of the age of six to fourteen years"
+  ],
+  "split": "train",
+  "note": "Part III; drafted from the text, not independent"
+ },
+ {
+  "id": "q15",
+  "question": "What does the opening Preamble declare India to be?",
+  "evidence": [
+   "having solemnly resolved to constitute India into a"
+  ],
+  "split": "train",
+  "note": "Part Preamble; drafted from the text, not independent"
+ },
+ {
+  "id": "q16",
+  "question": "Who became a citizen when the Constitution began?",
+  "evidence": [
+   "every person who has his domicile in the territory of India"
+  ],
+  "split": "train",
+  "note": "Part II; drafted from the text, not independent"
+ },
+ {
+  "id": "q17",
+  "question": "Can the government take my property without a law?",
+  "evidence": [
+   "No person shall be deprived of his property save by authority of law"
+  ],
+  "split": "train",
+  "note": "Part XII; drafted from the text, not independent"
+ },
+ {
+  "id": "q18",
+  "question": "How often is a Finance Commission set up?",
+  "evidence": [
+   "at the expiration of every fifth year"
+  ],
+  "split": "train",
+  "note": "Part XII; drafted from the text, not independent"
+ },
+ {
+  "id": "q19",
+  "question": "Who conducts the exams for government jobs?",
+  "evidence": [
+   "duty of the Union and the State Public Service Commissions to conduct examinations"
+  ],
+  "split": "train",
+  "note": "Part XIV; drafted from the text, not independent"
+ },
+ {
+  "id": "q20",
+  "question": "Who is the head of the Indian state?",
+  "evidence": [
+   "There shall be a President of India"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q21",
+  "question": "How old must someone be to become President?",
+  "evidence": [
+   "has completed the age of thirty-five years"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q22",
+  "question": "Who commands the armed forces?",
+  "evidence": [
+   "supreme command of the Defence Forces of the Union shall be vested in the President"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q23",
+  "question": "How long can a Lok Sabha last?",
+  "evidence": [
+   "shall continue for five years from the date appointed for its first meeting"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q24",
+  "question": "How many members does the Rajya Sabha nominate through the President?",
+  "evidence": [
+   "twelve members to be nominated by the President"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q25",
+  "question": "How is the Vice President chosen?",
+  "evidence": [
+   "members of an electoral college consisting of the members of both Houses of Parliament"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q26",
+  "question": "Who appoints the Prime Minister?",
+  "evidence": [
+   "Prime Minister shall be appointed by the President"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q27",
+  "question": "Is the cabinet answerable to the Lok Sabha?",
+  "evidence": [
+   "collectively responsible to the House of the People"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q28",
+  "question": "Can the President send a bill back to Parliament?",
+  "evidence": [
+   "requesting that they will reconsider the Bill"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q29",
+  "question": "What counts as a Money Bill?",
+  "evidence": [
+   "deemed to be a Money Bill if it contains only provisions dealing with all or any of the following matters"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q30",
+  "question": "How many judges can the Supreme Court have?",
+  "evidence": [
+   "Chief Justice of India and, until Parliament by law prescribes a larger number"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q31",
+  "question": "How can a Supreme Court judge be removed?",
+  "evidence": [
+   "majority of not less than two-thirds of the members of that House present and voting"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q32",
+  "question": "What experience does a Supreme Court judge need?",
+  "evidence": [
+   "has been for at least five years a Judge of a High Court"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q33",
+  "question": "How long can Parliament go without meeting?",
+  "evidence": [
+   "six months shall not intervene between its last sitting in one session and the date appointed for its first sitting in the next session"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q34",
+  "question": "Who audits the government's accounts?",
+  "evidence": [
+   "Comptroller and Auditor-General of India who shall be appointed by the President"
+  ],
+  "split": "train",
+  "note": "Part V; drafted from the text, not independent"
+ },
+ {
+  "id": "q35",
+  "question": "Who is the head of a state government?",
+  "evidence": [
+   "There shall be a Governor for each State"
+  ],
+  "split": "test",
+  "note": "Part VI; drafted from the text, not independent"
+ },
+ {
+  "id": "q36",
+  "question": "Who appoints the Governor of a state?",
+  "evidence": [
+   "Governor of a State shall be appointed by the President by warrant under his hand and seal"
+  ],
+  "split": "test",
+  "note": "Part VI; drafted from the text, not independent"
+ },
+ {
+  "id": "q37",
+  "question": "How long does a Governor serve?",
+  "evidence": [
+   "Governor shall hold office for a term of five years"
+  ],
+  "split": "test",
+  "note": "Part VI; drafted from the text, not independent"
+ },
+ {
+  "id": "q38",
+  "question": "Who can become a Governor?",
+  "evidence": [
+   "No person shall be eligible for appointment as Governor unless he is a citizen of India"
+  ],
+  "split": "test",
+  "note": "Part VI; drafted from the text, not independent"
+ },
+ {
+  "id": "q39",
+  "question": "Who appoints the Chief Minister?",
+  "evidence": [
+   "Chief Minister shall be appointed by the Governor"
+  ],
+  "split": "test",
+  "note": "Part VI; drafted from the text, not independent"
+ },
+ {
+  "id": "q40",
+  "question": "Can a state scrap its upper house?",
+  "evidence": [
+   "abolition of the Legislative Council of a State"
+  ],
+  "split": "test",
+  "note": "Part VI; drafted from the text, not independent"
+ },
+ {
+  "id": "q41",
+  "question": "What is a High Court?",
+  "evidence": [
+   "Every High Court shall be a court of record"
+  ],
+  "split": "test",
+  "note": "Part VI; drafted from the text, not independent"
+ },
+ {
+  "id": "q42",
+  "question": "At what age do High Court judges retire?",
+  "evidence": [
+   "and in any other case until he attains the age of"
+  ],
+  "split": "test",
+  "note": "Part VI; drafted from the text, not independent"
+ },
+ {
+  "id": "q43",
+  "question": "How many members can a state assembly have?",
+  "evidence": [
+   "not more than five hundred, and not less than sixty, members"
+  ],
+  "split": "test",
+  "note": "Part VI; drafted from the text, not independent"
+ },
+ {
+  "id": "q44",
+  "question": "Can a court force the state to follow the Directive Principles?",
+  "evidence": [
+   "shall not be enforceable by any court"
+  ],
+  "split": "test",
+  "note": "Part IV; drafted from the text, not independent"
+ },
+ {
+  "id": "q45",
+  "question": "Is there equal pay for men and women?",
+  "evidence": [
+   "equal pay for equal work for both men and women"
+  ],
+  "split": "test",
+  "note": "Part IV; drafted from the text, not independent"
+ },
+ {
+  "id": "q46",
+  "question": "Does the state have to protect the environment and wildlife?",
+  "evidence": [
+   "protect and improve the environment and to safeguard the forests and wild life of the country"
+  ],
+  "split": "test",
+  "note": "Part IV; drafted from the text, not independent"
+ },
+ {
+  "id": "q47",
+  "question": "Should there be one civil law for everybody?",
+  "evidence": [
+   "uniform civil code throughout the territory of India"
+  ],
+  "split": "test",
+  "note": "Part IV; drafted from the text, not independent"
+ },
+ {
+  "id": "q48",
+  "question": "Does the state have to set up village councils?",
+  "evidence": [
+   "organise village panchayats"
+  ],
+  "split": "test",
+  "note": "Part IV; drafted from the text, not independent"
+ },
+ {
+  "id": "q49",
+  "question": "Is free legal help guaranteed?",
+  "evidence": [
+   "free legal aid"
+  ],
+  "split": "test",
+  "note": "Part IV; drafted from the text, not independent"
+ },
+ {
+  "id": "q50",
+  "question": "What duties do citizens have towards the Constitution and the flag?",
+  "evidence": [
+   "abide by the Constitution and respect its ideals and institutions, the National Flag and the National Anthem"
+  ],
+  "split": "test",
+  "note": "Part IVA; drafted from the text, not independent"
+ },
+ {
+  "id": "q51",
+  "question": "Are citizens expected to protect public property?",
+  "evidence": [
+   "safeguard public property and to abjure violence"
+  ],
+  "split": "test",
+  "note": "Part IVA; drafted from the text, not independent"
+ },
+ {
+  "id": "q52",
+  "question": "Who runs the elections in India?",
+  "evidence": [
+   "superintendence, direction and control of the preparation of the electoral rolls"
+  ],
+  "split": "test",
+  "note": "Part XV; drafted from the text, not independent"
+ },
+ {
+  "id": "q53",
+  "question": "How old do you have to be to vote?",
+  "evidence": [
+   "eighteen years of age on such date as may be fixed in that behalf"
+  ],
+  "split": "test",
+  "note": "Part XV; drafted from the text, not independent"
+ },
+ {
+  "id": "q54",
+  "question": "When can a national emergency be declared?",
+  "evidence": [
+   "is threatened, whether by war or external aggression"
+  ],
+  "split": "test",
+  "note": "Part XVIII; drafted from the text, not independent"
+ },
+ {
+  "id": "q55",
+  "question": "What happens to my right to go to court during an emergency?",
+  "evidence": [
+   "the rights conferred by Part III except articles 20 and 21 as may be mentioned in the order"
+  ],
+  "split": "test",
+  "note": "Part XVIII; drafted from the text, not independent"
+ },
+ {
+  "id": "q56",
+  "question": "What is a financial emergency?",
+  "evidence": [
+   "financial stability or credit of India or of any part of the territory thereof is threatened"
+  ],
+  "split": "test",
+  "note": "Part XVIII; drafted from the text, not independent"
+ },
+ {
+  "id": "q57",
+  "question": "What if a state government cannot function?",
+  "evidence": [
+   "cannot be carried on in accordance with the provisions of this Constitution"
+  ],
+  "split": "test",
+  "note": "Part XVIII; drafted from the text, not independent"
+ },
+ {
+  "id": "q58",
+  "question": "How can the Constitution be changed?",
+  "evidence": [
+   "initiated only by the introduction of a Bill for the purpose in either House of Parliament"
+  ],
+  "split": "test",
+  "note": "Part XX; drafted from the text, not independent"
+ },
+ {
+  "id": "q59",
+  "question": "Do the states have to approve some amendments?",
+  "evidence": [
+   "ratified by the Legislatures of not less than one-half of the States"
+  ],
+  "split": "test",
+  "note": "Part XX; drafted from the text, not independent"
+ },
+ {
+  "id": "q60",
+  "question": "Are Lok Sabha seats reserved for Scheduled Castes and Tribes?",
+  "evidence": [
+   "seats shall be reserved in the House of the People for (a) the Scheduled Castes"
+  ],
+  "split": "test",
+  "note": "Part XVI; drafted from the text, not independent"
+ },
+ {
+  "id": "q61",
+  "question": "What is the official language of the Union?",
+  "evidence": [
+   "official language of the Union shall be Hindi in Devanagari script"
+  ],
+  "split": "test",
+  "note": "Part XVII; drafted from the text, not independent"
+ },
+ {
+  "id": "q62",
+  "question": "Who runs a Union Territory?",
+  "evidence": [
+   "administered by the President acting, to such extent as he thinks fit, through an administrator"
+  ],
+  "split": "test",
+  "note": "Part VIII; drafted from the text, not independent"
+ }
 ]

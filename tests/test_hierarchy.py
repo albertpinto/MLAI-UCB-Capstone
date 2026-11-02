@@ -195,17 +195,35 @@ def test_a_reply_with_the_wrong_shape_keeps_the_original_child():
 
 
 def test_the_cache_saves_llm_calls_and_survives_a_restart(tmp_path):
-    reply = {"resolved": "The President acts.", "qa_pairs": [], "factoids": [], "triplets": []}
-    llm, parent, path = ScriptedLLM(reply), Parent("The President acts."), tmp_path / "cache" / "e.jsonl"
-    enrich_child(llm, SETTINGS, parent, "The President acts.", EnrichmentCache(path))
+    reply = {"replacements": [{"find": "He", "replace": "The President"}], "qa_pairs": [], "factoids": [], "triplets": []}
+    llm, parent, path = ScriptedLLM(reply), Parent("The President acts. He signs."), tmp_path / "cache" / "e.jsonl"
+    child = "The President acts. He signs."
+    assert enrich_child(llm, SETTINGS, parent, child, EnrichmentCache(path)).content == "The President acts. The President signs."
     assert llm.calls == 2  # resolve, then derive
-    enrich_child(llm, SETTINGS, parent, "The President acts.", EnrichmentCache(path))  # a new cache object reads the file
+    enrich_child(llm, SETTINGS, parent, child, EnrichmentCache(path))  # a new cache object reads the file
     assert llm.calls == 2
     path.write_text(path.read_text() + '{"key": "half-writt')  # a crash mid-write must not break the next run
-    enrich_child(llm, SETTINGS, parent, "The President acts.", EnrichmentCache(path))
+    enrich_child(llm, SETTINGS, parent, child, EnrichmentCache(path))
     assert llm.calls == 2
-    enrich_child(llm, SETTINGS, parent, "Another child.", EnrichmentCache(path))
-    assert llm.calls == 3  # a different child needs a new resolve call (its derive call hits the cache: the scripted reply resolves to the same text)
+
+
+def test_a_child_with_no_references_skips_the_resolve_call():
+    llm = ScriptedLLM({"qa_pairs": [], "factoids": [], "triplets": []})
+    e = enrich_child(llm, SETTINGS, Parent("The President acts."), "The President acts.")
+    assert llm.calls == 1 and e.content == "The President acts."  # only the derive call
+
+
+def test_replacements_are_applied_by_us_and_bad_ones_are_ignored():
+    from capstone.enrich import apply_replacements
+
+    child = "He may summon the House. His power is limited; it is not absolute, and the Italian one differs."
+    out = apply_replacements(child, [
+        {"find": "He", "replace": "The President"}, {"find": "His power", "replace": "The President's power"},
+        {"find": "it", "replace": "the power"}, {"find": "absent words", "replace": "x"},
+        {"find": "Ital", "replace": "BAD"}, {"find": "the", "replace": ""}, "junk", {"find": 3}, {"find": "House", "replace": "a " * 20},
+    ])
+    assert out == "The President may summon the House. The President's power is limited; the power is not absolute, and the Italian one differs."
+    assert apply_replacements(child, "not a list") == child
 
 
 class ScriptedLLM:
@@ -244,3 +262,48 @@ def test_a_very_long_child_is_cut_into_pieces():
     pieces = _cap(long, 60, 30)
     assert len(pieces) > 5 and all(len(p.split()) <= 45 for p in pieces) and " ".join(pieces).count("clause") == 40
     assert _cap("short enough text", 60, 30) == ["short enough text"]
+
+
+def test_running_header_with_a_page_number_is_still_the_title(monkeypatch):
+    body = "Every citizen has the right to speak freely and to assemble peaceably in public. " * 4
+    items = []
+    for page in range(1, 41):
+        items.append(item("section_header", f"THE CONSTITUTION OF INDIA {page}" if page % 2 else "THE CONSTITUTION OF INDIA", page=page))
+        items.append(item("text", body, page=page))
+    with_docling(monkeypatch, items)
+    parents = parents_from_file("c.pdf", b"x", Settings(qdrant_url=":memory:", parent_chars=700))
+    assert parents and not any("CONSTITUTION" in p.section for p in parents)
+
+
+def test_footnote_lines_are_dropped_but_omitted_articles_stay():
+    from capstone.parsing import strip_footnotes
+
+    text = "Real clause text.\nIns. by the Constitution (First Amendment) Act, 1951, s. 4 (w.e.f. 18-6-1951).\n4 (w.e.f. 13-4-1978).\nby the Constitution (Tenth Amendment) Act, 1961\n[32A. Omitted by the Constitution (Forty-third Amendment) Act, 1977, s. 2]"
+    assert strip_footnotes(text) == "Real clause text.\n[32A. Omitted by the Constitution (Forty-third Amendment) Act, 1977, s. 2]"
+
+
+def test_a_bare_article_number_moves_to_the_piece_it_belongs_to():
+    from capstone.parsing import move_numbers
+
+    assert move_numbers(["No person shall be compelled.\n21.", "Protection of life.-No person shall be deprived."]) == [
+        "No person shall be compelled.", "21.\nProtection of life.-No person shall be deprived."]
+    assert move_numbers(["First.\n2 [21A.", "Right to education."]) == ["First.", "2 [21A.\nRight to education."]
+    assert move_numbers(["Only piece.\n21."]) == ["Only piece.\n21."]  # nothing follows, so it stays
+    assert move_numbers(["Plain text.", "More text."]) == ["Plain text.", "More text."]
+
+
+def test_part_headings_are_recognised_in_any_form_and_even_when_short(monkeypatch):
+    from capstone.parsing import _part
+
+    assert _part("(Part V.-The Union)") == ("V", "Part V – The Union")
+    assert _part("PART IVA FUNDAMENTAL DUTIES") == ("IVA", "Part IVA – Fundamental Duties")
+    assert _part("PART VIII THE UNION TERRITORIES") == ("VIII", "Part VIII – The Union Territories")
+    assert _part("Part of the problem") is None and _part("Article 5") is None
+
+    body = "Every citizen has the right to speak freely and to assemble peaceably in public. " * 8
+    items = [item("section_header", "PART III FUNDAMENTAL RIGHTS", page=1), item("text", body, page=1),
+             item("section_header", "(Part III.-Fundamental Rights)", page=2), item("text", body, page=2),  # same Part, other spelling: no new parent
+             item("section_header", "PART IV DIRECTIVE PRINCIPLES", page=3), item("text", body, page=3)]  # a Part on one page only
+    with_docling(monkeypatch, items)
+    parents = parents_from_file("c.pdf", b"x", Settings(qdrant_url=":memory:", parent_chars=5000))
+    assert [p.section for p in parents] == ["Part III – Fundamental Rights", "Part IV – Directive Principles"]

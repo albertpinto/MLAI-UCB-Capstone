@@ -53,7 +53,7 @@ class FakeLLM:
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(qdrant_url=":memory:", collection="test", docs_dir=tmp_path, groq_api_key="x", enrich_cache=None)
+    return Settings(qdrant_url=":memory:", collection="test", docs_dir=tmp_path, groq_api_key="x", enrich_cache=None, eval_questions_file=tmp_path / "q.json", eval_results_file=tmp_path / "r.json")
 
 
 @pytest.fixture
@@ -68,5 +68,5 @@ def llm():
 
 @pytest.fixture
 def client(settings, store, llm):
-    with TestClient(create_app(settings, store, llm)) as c:
+    with TestClient(create_app(settings, store, llm, embedder_factory=lambda name: FakeEmbedder())) as c:
         yield c

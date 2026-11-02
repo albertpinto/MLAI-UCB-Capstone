@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { Code2, FileText, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
+import { BarChart3, Code2, FileText, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
 import { getBranding, health } from "./api.js";
 import { Logo } from "./components.jsx";
 import Ask from "./pages/Ask.jsx";
@@ -8,9 +8,12 @@ import Documents from "./pages/Documents.jsx";
 import ApiDocs from "./pages/ApiDocs.jsx";
 import Passage from "./pages/Passage.jsx";
 
+const Dashboard = lazy(() => import("./pages/Dashboard.jsx")); // Plotly is large, so it loads only when the dashboard opens
+
 const GROUPS = [
   { label: "Search", pages: [{ to: "/", label: "Ask", icon: Search }] },
   { label: "Content", pages: [{ to: "/documents", label: "Documents", icon: FileText }] },
+  { label: "Insights", pages: [{ to: "/dashboard", label: "Dashboard", icon: BarChart3 }] },
   { label: "Developers", pages: [{ to: "/api-docs", label: "API docs", icon: Code2 }] },
 ];
 const PAGES = GROUPS.flatMap((g) => g.pages);
@@ -113,6 +116,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Ask />} />
               <Route path="/documents" element={<Documents />} />
+              <Route path="/dashboard" element={<Suspense fallback={<p className="hint">Loading…</p>}><Dashboard /></Suspense>} />
               <Route path="/ingest" element={<Navigate to="/documents" replace />} />
               <Route path="/add" element={<Navigate to="/documents" replace />} />
               <Route path="/api-docs" element={<ApiDocs />} />

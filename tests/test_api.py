@@ -81,3 +81,9 @@ def test_passage_endpoint_and_contents_pages_are_hidden(client):
     ingest(client, "Contents", toc)
     found = client.post("/api/search", json={"query": "Heading number", "limit": 20}).json()["results"]
     assert not [r for r in found if r["title"] == "Contents" and r["type"] == "chunk"]
+
+
+def test_several_files_in_one_job_are_all_processed_in_order(client):
+    files = [("files", (f"g{i}.txt", f"Guide {i}\n\nTo add brand {i} click the Add Brand button.".encode(), "text/plain")) for i in range(3)]
+    job = wait(client, client.post("/api/ingest/files", files=files).json()["job_id"])
+    assert [(i["name"], i["status"]) for i in job["items"]] == [(f"g{n}.txt", "processed") for n in range(3)]

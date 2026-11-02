@@ -7,6 +7,10 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
+    ulimits:
+      nofile:  # each collection keeps many segment files open; the default limit ran out with a few collections
+        soft: 65535
+        hard: 65535
 
 volumes:
   qdrant_data:
