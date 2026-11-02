@@ -38,3 +38,11 @@ input:focus-visible, textarea:focus-visible { outline: none; }  /* fields show a
   .badge { @apply rounded-full border border-line px-2.5 py-0.5 text-xs uppercase tracking-wider text-muted; }
   .chip { @apply mr-1.5 inline-block rounded-full border border-line bg-bg px-2.5 text-xs; }
 }
+
+/* Printing (and the user guide's PDF): only the page content, no app chrome */
+@media print {
+  body header, body nav, body footer, .no-print { display: none !important; }
+  main { padding: 0 !important; }
+  figure, li { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
+}

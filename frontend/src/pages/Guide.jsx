@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { Download } from "lucide-react";
 
 // Screenshots live in frontend/public/guide/ (made by scripts/screenshots.sh from the running app).
 function Shot({ file, alt, children }) {
@@ -39,10 +40,11 @@ export default function Guide() {
       </nav>
 
       <article className="min-w-0 max-w-3xl flex-1 space-y-10 leading-relaxed [&_code]:rounded [&_code]:bg-soft [&_code]:px-1 [&_h2]:scroll-mt-24 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mt-5 [&_h3]:font-semibold [&_ul]:my-3 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-6">
-        <header>
+        <div>
           <h1 className="text-2xl font-semibold tracking-tight">User guide</h1>
           <p className="hint mt-1">How to load documents, ask questions in everyday words, and check how well the system works. Click any screenshot to open it full size.</p>
-        </header>
+          <a className="btn no-print mt-3 inline-flex items-center gap-2 !py-2" href="/user-guide.pdf" download="User guide.pdf"><Download size={16} />Download as PDF</a>
+        </div>
 
         <section id="start">
           <h2>Getting started</h2>
