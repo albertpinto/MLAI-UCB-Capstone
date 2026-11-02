@@ -45,6 +45,12 @@ contains it is the right answer, so labels survive a re-chunk. Each question is 
 document. The shipped 62 were drafted by reading the Constitution, so treat them as a first set: add questions written by someone who
 has not read the text. Retrieval is scored on the chunks stored in the `COLLECTION` in `.env`.
 
+## Reranking
+The Ask page searches densely, then a cross-encoder (`RERANK_MODEL`, default `cross-encoder/ms-marco-MiniLM-L-6-v2`) re-orders the top
+`RERANK_CANDIDATES` (30) results. It changes the order only; the cosine score and the "abstain when nothing is relevant" rule are unchanged.
+On the held-out test questions it raised MRR from 0.70 to 0.80 and Recall@5 from 0.89 to 0.96 (see the Dashboard). Turn it off with
+`RERANK_SEARCH=false`. Hybrid BM25 + dense search did *worse* than dense alone here, so it is measured on the Dashboard but not used by Ask.
+
 ## Fine-tune the embedding model (CPU is enough for MiniLM)
 ```bash
 uv run python eval/finetune.py --epochs 2          # writes models/finetuned-minilm

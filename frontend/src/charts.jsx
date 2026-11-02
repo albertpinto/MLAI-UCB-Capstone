@@ -3,7 +3,7 @@ import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-cartesian-dist-min";
 
 const Plot = createPlotlyComponent(Plotly);
-const TOKENS = { text: "--text", muted: "--muted", grid: "--line", panel: "--panel", s1: "--s1", s2: "--s2", s3: "--s3", s4: "--s4", s5: "--s5" };
+const TOKENS = { text: "--text", muted: "--muted", grid: "--line", panel: "--panel", s1: "--s1", s2: "--s2", s3: "--s3", s4: "--s4", s5: "--s5", s6: "--s6" };
 
 // Plotly needs real colour strings, so read the CSS tokens and re-read them when the OS theme changes.
 function readTheme() {
@@ -21,11 +21,11 @@ export function useTheme() {
   return theme;
 }
 
-// A retriever keeps its colour whatever else is selected (fixed: BM25, base, fine-tuned, hybrid, rerank).
-export const RETRIEVER_COLOUR = { bm25: "s1", base: "s2", tuned: "s3", hybrid: "s4", rerank: "s5" };
+// A retriever keeps its colour whatever else is selected (fixed: BM25, base, fine-tuned, hybrid, hybrid+rerank, base+rerank).
+export const RETRIEVER_COLOUR = { bm25: "s1", base: "s2", tuned: "s3", hybrid: "s4", rerank: "s5", base_rerank: "s6" };
 
 // Short names for legends and column headers; the full label is in the tooltip and the KPI tiles.
-export const SHORT = { bm25: "BM25", base: "Base", tuned: "Fine-tuned", hybrid: "Hybrid", rerank: "Hybrid + rerank" };
+export const SHORT = { bm25: "BM25", base: "Base", tuned: "Fine-tuned", hybrid: "Hybrid", rerank: "Hybrid + rerank", base_rerank: "Base + rerank" };
 
 export function Chart({ data, layout, height = 320, label }) {
   const t = useTheme();

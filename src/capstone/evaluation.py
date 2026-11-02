@@ -16,7 +16,7 @@ from .store import DEFAULT_MODEL
 
 RETRIEVERS = {
     "bm25": "BM25", "base": "Base MiniLM (un-tuned)", "tuned": "Fine-tuned MiniLM",
-    "hybrid": "Hybrid (BM25 + base, RRF)", "rerank": "Hybrid + cross-encoder rerank",
+    "hybrid": "Hybrid (BM25 + base, RRF)", "rerank": "Hybrid + cross-encoder rerank", "base_rerank": "Base + cross-encoder rerank",
 }
 RRF_K = 60  # reciprocal rank fusion constant
 RERANK_TOP = 30  # chunks the cross-encoder re-scores
@@ -129,14 +129,16 @@ def build_scorers(settings, corpus: Corpus, names: list[str], embedder_factory, 
             elif name == "hybrid":
                 built[name] = rrf_scorer([get("bm25"), get("base")])
             elif name == "rerank":
-                built[name] = rerank_scorer(get("hybrid"), reranker_factory(settings.rerank_model), corpus.texts)
+                built[name] = rerank_scorer(get("hybrid"), reranker_factory(settings.rerank_model), corpus.texts, settings.rerank_candidates)
+            elif name == "base_rerank":  # what the Ask page does: dense search, then a cross-encoder over its top results
+                built[name] = rerank_scorer(get("base"), reranker_factory(settings.rerank_model), corpus.texts, settings.rerank_candidates)
         return built[name]
 
     return {name: get(name) for name in names if name in available_retrievers(settings)}
 
 
 def available_retrievers(settings) -> list[str]:
-    return [n for n in RETRIEVERS if (n != "tuned" or settings.fine_tuned_model) and (n != "rerank" or settings.rerank_model)]
+    return [n for n in RETRIEVERS if (n != "tuned" or settings.fine_tuned_model) and (n not in ("rerank", "base_rerank") or settings.rerank_model)]
 
 
 def load_questions(path) -> list[dict]:

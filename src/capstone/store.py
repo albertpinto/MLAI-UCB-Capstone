@@ -61,10 +61,12 @@ def display_text(payload: dict) -> str:
 class Store:
     """One Qdrant collection holding chunk, qa_pair, topic and summary points."""
 
-    def __init__(self, url: str, collection: str, embedder):
+    def __init__(self, url: str, collection: str, embedder, reranker=None, rerank_candidates: int = 30):
         self.client = QdrantClient(location=url)  # ":memory:" works too (used by tests)
         self.collection = collection
         self.embedder = embedder
+        self.reranker = reranker  # a cross-encoder: predict([(query, text), ...]) -> scores
+        self.rerank_candidates = rerank_candidates
         self._ensure_collection()
 
     def _ensure_collection(self) -> None:
@@ -100,7 +102,7 @@ class Store:
         response = self.client.query_points(
             self.collection,
             query=self.embedder.encode([query])[0],
-            limit=limit,
+            limit=max(limit, self.rerank_candidates) if self.reranker else limit,
             query_filter=models.Filter(must=must) if must else None,
             with_payload=True,
         )
@@ -108,7 +110,11 @@ class Store:
             {"score": hit.score, "text": display_text(hit.payload), **{k: v for k, v in hit.payload.items() if k != "parent_text"}}  # parents are fetched by with_parents
             for hit in response.points
         ]
-        return [r for r in results if not (r["type"] == "chunk" and is_contents(r["content"]))]  # a contents page answers nothing
+        results = [r for r in results if not (r["type"] == "chunk" and is_contents(r["content"]))]  # a contents page answers nothing
+        if self.reranker and len(results) > 1:  # only the order changes: `score` stays the cosine similarity the abstention rule uses
+            relevance = self.reranker.predict([(query, r["text"]) for r in results])
+            results = [r for _, r in sorted(zip(relevance, results), key=lambda pair: -pair[0])]
+        return results[:limit]
 
     def _parent_payload(self, document_id: str, parent_id: int) -> dict | None:
         """Any child of the parent: they all carry the parent's text, section and page."""

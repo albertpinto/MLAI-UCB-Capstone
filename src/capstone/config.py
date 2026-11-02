@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     eval_questions_file: Path = Path("eval/questions.json")  # labelled questions for the retrieval evaluation
     eval_results_file: Path = Path("eval/results.json")  # the last evaluation run, so the dashboard opens instantly
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # a real cross-encoder (not the bi-encoder); "" leaves reranking out
+    rerank_search: bool = True  # the Ask page re-orders its dense results with the cross-encoder (measured: better MRR and nDCG)
+    rerank_candidates: int = 30  # results the cross-encoder re-scores; 20 to 30 measured about the same, more adds noise
     fine_tuned_model: str = ""  # path to the fine-tuned embedding model; "" leaves it out of the evaluation
 
 
