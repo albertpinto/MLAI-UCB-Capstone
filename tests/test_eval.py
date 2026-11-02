@@ -49,6 +49,8 @@ def test_questions_run_and_results_over_the_api(client):
     listed = client.get("/api/eval/questions").json()
     assert [q["id"] for q in listed["questions"]] == ["q1", "q2", "q3", "q4"] and [r["id"] for r in listed["retrievers"]] == ["bm25", "base", "hybrid", "rerank", "base_rerank"]
     assert client.put("/api/eval/questions", json={"questions": questions + questions[:1]}).status_code == 400  # duplicate id
+    checks = client.post("/api/eval/questions/check", json={"questions": questions}).json()["checks"]
+    assert len(checks["q1"]) == 1 and checks["q4"] == []  # q4's evidence is in no section
 
     assert client.post("/api/eval/run", json={"retrievers": ["tuned"]}).status_code == 400  # no fine-tuned model configured
     job = wait_eval(client, client.post("/api/eval/run", json={"k": 3}).json()["job_id"])

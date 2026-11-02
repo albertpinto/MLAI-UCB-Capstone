@@ -56,3 +56,5 @@ export async function watchEval(jobId, onUpdate) {
     await new Promise((r) => setTimeout(r, 1000));
   }
 }
+export const saveEvalQuestions = (questions) => request("/eval/questions", json("PUT", { questions }));
+export const checkEvalQuestions = (questions) => request("/eval/questions/check", json("POST", { questions }));

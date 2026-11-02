@@ -14,7 +14,7 @@ from .answer import answer_question
 from .ingest import IngestResult, ingest_text
 from .llm import LLM
 from .parsing import parents_from_file
-from .evaluation import RETRIEVERS, default_reranker, available_retrievers, build_scorers, load_corpus, load_questions, run_evaluation
+from .evaluation import RETRIEVERS, default_reranker, available_retrievers, build_scorers, load_corpus, load_questions, relevant_sections, run_evaluation
 from .schemas import AskRequest, EvalQuestions, EvalRun, SearchRequest, TextDocument
 from .store import Embedder, Store
 
@@ -229,6 +229,12 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
         settings.eval_questions_file.parent.mkdir(parents=True, exist_ok=True)
         settings.eval_questions_file.write_text(json.dumps([q.model_dump() for q in body.questions], indent=1, ensure_ascii=False))
         return {"saved": len(ids)}
+
+    @app.post("/api/eval/questions/check", tags=["Evaluation"], summary="Check where each question's evidence is found", responses={200: {"content": {"application/json": {"example": {"checks": {"q-article-21": ["Part III – Fundamental Rights › Right to Life"]}}}}}})
+    def check_eval_questions(body: EvalQuestions):
+        """Works on a draft, before it is saved. For each question, the sections of the index whose text contains one of its `evidence` phrases. An empty list means the evidence matches nothing, so the question would be left out of an evaluation."""
+        corpus = load_corpus(app.state.store)
+        return {"checks": {q.id: [corpus.sections[k]["section"] or k for k in sorted(relevant_sections(corpus, q.model_dump()))] for q in body.questions}}
 
     @app.post("/api/eval/run", tags=["Evaluation"], summary="Run the retrieval evaluation", responses={200: {"content": {"application/json": {"example": {"job_id": "9f0c1c0e-…"}}}}})
     def eval_run(body: EvalRun, background: BackgroundTasks):

@@ -43,7 +43,9 @@ uv run python eval/eval.py --k 5 --split test
 Questions live in `eval/questions.json`. Each has `evidence`, a phrase copied from the text that answers it; a section that
 contains it is the right answer, so labels survive a re-chunk. Each question is `train` or `test`, split by Part of the
 document. The shipped 62 were drafted by reading the Constitution, so treat them as a first set: add questions written by someone who
-has not read the text. Retrieval is scored on the chunks stored in the `COLLECTION` in `.env`.
+has not read the text. The **Questions** page (Insights) lists, adds, edits and deletes them, switches train/test, imports and exports
+the JSON file, and shows for each one which section its evidence is found in (a question whose evidence matches nothing is flagged,
+because an evaluation would leave it out). Retrieval is scored on the chunks stored in the `COLLECTION` in `.env`.
 
 ## Reranking
 The Ask page searches densely, then a cross-encoder (`RERANK_MODEL`, default `cross-encoder/ms-marco-MiniLM-L-6-v2`) re-orders the top
@@ -67,7 +69,7 @@ uv run pytest        # fakes for embeddings and the LLM, in-memory Qdrant: no ne
 
 ## Layout
 `src/capstone/`: `config` · `extract` · `parsing` (Docling parents, Chonkie children) · `enrich` (LLM per chunk) · `ingest` · `store` · `answer` · `evaluation` · `finetune` · `schemas` · `main` (API).
-`frontend/`: Vite + React + Tailwind; pages Ask, Documents, Dashboard (Plotly), API docs. `eval/`: command-line wrappers for the evaluation and fine-tuning, and the labelled questions. `tests/`.
+`frontend/`: Vite + React + Tailwind; pages Ask, Documents, Dashboard (Plotly), Questions, API docs. `eval/`: command-line wrappers for the evaluation and fine-tuning, and the labelled questions. `tests/`.
 
 ## Notes
 - Ingestion runs one document at a time in the background; progress is polled from `/api/jobs/{id}`. Jobs are kept
