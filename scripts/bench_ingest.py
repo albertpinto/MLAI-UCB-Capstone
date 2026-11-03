@@ -1,25 +1,25 @@
 """Time the LLM enrichment on the same text with the provider set in .env (or LLM_PROVIDER=openai on the command line).
 
-    uv run python scripts/bench_ingest.py [chunks] [workers]
+    uv run python scripts/bench_ingest.py [pages] [workers]
 
-Takes `chunks` chunks (default 100) from the live index, ingests them into an in-memory index with no cache, and prints the time.
-Nothing is written to the real index or the cache. Run it once per provider and compare.
+Takes the plain text of `pages` pages (default 25) from the first PDF in DOCS_DIR, ingests it into an in-memory index with no cache, and prints
+the time. Nothing is written to the real index or the cache. Run it once per provider and compare.
 """
 import sys
 import time
 
-from qdrant_client import QdrantClient
+from pypdf import PdfReader
 
 from capstone.config import Settings
 from capstone.ingest import ingest_text
 from capstone.llm import LLM
 from capstone.store import Embedder, Store
 
-count = int(sys.argv[1]) if len(sys.argv) > 1 else 100
+pages = int(sys.argv[1]) if len(sys.argv) > 1 else 25
 workers = int(sys.argv[2]) if len(sys.argv) > 2 else 4
 s = Settings()
-points, _ = QdrantClient(location=s.qdrant_url).scroll(s.collection, scroll_filter={"must": [{"key": "type", "match": {"value": "chunk"}}]}, limit=count + 100, with_payload=["content"], with_vectors=False)
-text = "\n\n".join(p.payload["content"] for p in points[100 : 100 + count])
+pdf = next(s.docs_dir.glob("*.pdf"))
+text = "\n\n".join(page.extract_text() for page in PdfReader(pdf).pages[60 : 60 + pages])  # from page 60, past the contents and preamble
 
 cfg = Settings(qdrant_url=":memory:", enrich_cache=None, llm_workers=workers)
 openai = cfg.llm_provider == "openai"
