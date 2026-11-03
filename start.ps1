@@ -3,9 +3,9 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-if (-not (Select-String -Path .env -Pattern '^GROQ_API_KEY=.+' -Quiet -ErrorAction SilentlyContinue)) {
-  Write-Error "Missing GROQ_API_KEY. Run: Copy-Item .env.example .env, then set GROQ_API_KEY in .env"
-}
+# The key for the provider set in .env (LLM_PROVIDER); the check prints what is missing.
+uv run python scripts/check_llm_key.py
+if ($LASTEXITCODE -ne 0) { exit 1 }
 
 # With QDRANT_PATH set the index is a folder inside the project and Docker is not needed.
 if (-not (Select-String -Path .env -Pattern '^QDRANT_PATH=.+' -Quiet)) {

@@ -219,7 +219,7 @@ export default function Guide() {
           <h2>Troubleshooting</h2>
           <ul>
             <li><b>“API offline”</b>: the API is not running or still loading its models (the first start downloads them). Wait a minute, then run <code>./start.sh</code> again.</li>
-            <li><b>The key is missing</b> (“GROQ_API_KEY is not set” or “OPENAI_API_KEY is not set”): copy <code>.env.example</code> to <code>.env</code> and put the key of the provider named in <code>LLM_PROVIDER</code> in it.</li>
+            <li><b>The key is missing</b> (<code>./start.sh</code> stops with “Missing GROQ_API_KEY” or “Missing OPENAI_API_KEY”): it checks the key of the provider set in <code>LLM_PROVIDER</code> (Groq if the line is absent). Copy <code>.env.example</code> to <code>.env</code> and put that provider’s key in it, or change <code>LLM_PROVIDER</code> to the provider whose key you have.</li>
             <li><b>“Invalid API Key” (401)</b>: the key is wrong or was revoked. Create a new one at the provider, put it in <code>.env</code> and restart. Nothing is retried for this error, so it shows at once.</li>
             <li><b>“model does not exist or you do not have access” (404)</b>: <code>GROQ_MODEL</code> or <code>OPENAI_MODEL</code> names a model your key cannot use. Pick another one and restart. This is also shown at once, without retries.</li>
             <li><b>Ingestion is slow, or you see rate-limit (429) messages in the API log</b>: the provider limits how much it will write per minute. Run it again (cached work is not repeated), use fewer parallel calls on Groq (4), or switch to OpenAI, which handles more at once.</li>

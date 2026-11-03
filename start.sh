@@ -3,10 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-if ! grep -qE '^GROQ_API_KEY=.+' .env 2>/dev/null; then
-  echo "Missing GROQ_API_KEY. Run: cp .env.example .env, then set GROQ_API_KEY in .env" >&2
-  exit 1
-fi
+uv run python scripts/check_llm_key.py || exit 1   # the key for the provider set in .env (LLM_PROVIDER)
 
 docker compose up -d qdrant
 echo -n "Waiting for Qdrant"
