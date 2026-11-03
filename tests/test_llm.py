@@ -79,3 +79,36 @@ def test_calls_are_spaced_by_the_minimum_interval(monkeypatch):
     llm.json_call("s", "u")
     llm.json_call("s", "u")
     assert len(sleeps) == 1 and 4 < sleeps[0] <= 5
+
+
+def test_the_provider_picks_the_client_and_names_the_missing_key():
+    from groq import Groq
+    from openai import OpenAI
+
+    assert isinstance(LLM("key", "m", provider="groq").client, Groq)
+    assert isinstance(LLM("key", "m", provider="openai").client, OpenAI)
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        LLM("", "m", provider="openai")
+    with pytest.raises(ValueError, match="LLM_PROVIDER"):
+        LLM("key", "m", provider="other")
+
+
+def test_an_openai_error_with_a_missing_model_also_fails_at_once(llm):
+    from openai import NotFoundError
+
+    response = httpx.Response(404, request=httpx.Request("POST", "https://x"))
+    llm.client = Failing(NotFoundError("no such model", response=response, body=None))
+    with pytest.raises(NotFoundError):
+        llm.json_call("s", "u")
+    assert llm.client.calls == 1
+
+
+def test_the_env_file_wins_over_a_variable_left_in_the_shell(tmp_path, monkeypatch):
+    from capstone.config import Settings
+
+    (tmp_path / ".env").write_text("GROQ_API_KEY=from-the-env-file\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GROQ_API_KEY", "left-over-in-the-shell")
+    monkeypatch.setenv("OPENAI_API_KEY", "only-in-the-shell")
+    settings = Settings()
+    assert settings.groq_api_key == "from-the-env-file" and settings.openai_api_key == "only-in-the-shell"  # the shell still fills what .env leaves out

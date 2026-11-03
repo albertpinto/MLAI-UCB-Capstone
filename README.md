@@ -34,7 +34,9 @@ already have in the Docker Qdrant: `uv run python -m capstone.export_index data/
 the folder mode was tried on Linux (the API answered a real question from a copied index).
 `data/docs/` holds the PDF and sample help articles for the "Ingest the docs folder" button. Ingesting a large PDF with real
 Groq calls takes tens of minutes (Groq's output-token rate limit is the bottleneck); LLM results are cached in `ENRICH_CACHE`, so a
-repeated or resumed ingest is much faster.
+repeated or resumed ingest is much faster. To try OpenAI instead, set `LLM_PROVIDER=openai`, `OPENAI_API_KEY` and optionally `OPENAI_MODEL` in `.env`;
+`uv run python scripts/bench_ingest.py` times the enrichment on the same 100 chunks for whichever provider is set. `.env` wins over variables
+already exported in the shell, so a key left in `~/.bashrc` cannot override it.
 
 | Page | Use |
 |---|---|

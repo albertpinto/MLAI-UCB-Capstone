@@ -3,7 +3,8 @@ import logging
 import threading
 import time
 
-from groq import APIStatusError, Groq
+from groq import APIStatusError as GroqStatusError, Groq
+from openai import APIStatusError as OpenAIStatusError, OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -12,13 +13,15 @@ NOT_RETRYABLE = {400, 401, 403, 404, 422}
 
 
 class LLM:
-    """Thin Groq wrapper: one method that returns parsed JSON. Calls are throttled (at most `max_concurrent` in flight,
+    """Thin Groq or OpenAI wrapper (the two SDKs share the same chat call): one method that returns parsed JSON. Calls are throttled (at most `max_concurrent` in flight,
     at least `min_interval` seconds between starts) and a 429 waits for the time Groq asks for."""
 
-    def __init__(self, api_key: str, model: str, max_concurrent: int = 4, min_interval: float = 0.0):
+    def __init__(self, api_key: str, model: str, max_concurrent: int = 4, min_interval: float = 0.0, provider: str = "groq"):
+        if provider not in ("groq", "openai"):
+            raise ValueError(f"LLM_PROVIDER must be groq or openai, not {provider!r}")
         if not api_key:
-            raise ValueError("GROQ_API_KEY is not set (see .env.example)")
-        self.client = Groq(api_key=api_key, max_retries=0)
+            raise ValueError(f"{provider.upper()}_API_KEY is not set (see .env.example)")
+        self.client = (Groq if provider == "groq" else OpenAI)(api_key=api_key, max_retries=0)
         self.model = model
         self.slots = threading.Semaphore(max(1, max_concurrent))
         self.min_interval = min_interval
@@ -51,7 +54,7 @@ class LLM:
                 return data
             except Exception as exc:
                 logger.warning("LLM call failed (attempt %d/%d): %s", attempt + 1, retries, exc)
-                if isinstance(exc, APIStatusError):
+                if isinstance(exc, (GroqStatusError, OpenAIStatusError)):
                     if exc.status_code in NOT_RETRYABLE:
                         raise
                     try:

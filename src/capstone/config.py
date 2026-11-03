@@ -9,8 +9,16 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
+        """.env wins over the shell's environment: a key left exported by another project (for example in ~/.bashrc) must not override this project's."""
+        return init_settings, dotenv_settings, env_settings, file_secret_settings
+
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
+    llm_provider: str = "groq"  # groq | openai: which service writes the chunk enrichment and the answers
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
     llm_max_concurrent: int = 4
     llm_min_interval: float = 0.0
 
