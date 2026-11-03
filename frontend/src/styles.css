@@ -44,5 +44,6 @@ input:focus-visible, textarea:focus-visible { outline: none; }  /* fields show a
   body header, body nav, body footer, .no-print { display: none !important; }
   main { padding: 0 !important; }
   figure, li { break-inside: avoid; }
+  figure img { width: auto !important; max-width: 100%; max-height: 7.5in; margin: 0 auto; display: block; }  /* a tall screenshot must fit on one page, or it is split and leaves empty pages */
   h2, h3 { break-after: avoid; }
 }
