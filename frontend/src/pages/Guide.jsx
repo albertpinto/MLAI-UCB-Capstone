@@ -97,7 +97,8 @@ export default function Guide() {
             <li><b>Ingest the docs folder</b> reads every file in the server’s <code>DOCS_DIR</code> (<code>data/docs</code> by default).</li>
             <li><b>Paste text</b>: give a title and paste the text. The title becomes the citation shown with answers.</li>
           </ul>
-          <p>Ingestion runs in the background and shows progress per file: chunks, Q&A pairs, topics. A large PDF can take tens of minutes because of the LLM provider’s rate limit; finished work is cached, so a repeated run is fast.</p>
+          <p>Ingestion runs in the background and updates every second, so you can watch it work. For each file the table shows what it is doing now (reading the file, splitting, enriching chunks with the LLM, writing the summary and glossary, storing) and the counts grow as it goes: chunks, Q&amp;A pairs, facts, triplets and terms. While chunks are being enriched the line under the progress bar says how many are done, for example “120 of 2358 chunks”. Reading a large PDF shows no counts for a few minutes; that is the slow first step, not a hang.</p>
+          <p>How long the enrichment takes depends on the LLM provider you chose (see <a className="text-accent" href="#operate">Running and configuring</a>). Finished work is cached, so a repeated or resumed run is fast.</p>
           <Tip>The same text is never stored twice (it is recognised by a hash and shown as “skipped”).</Tip>
           <h3>Library, versions and expiry</h3>
           <Shot file="library.png" alt="The Library tab listing documents with version and expiry" />
@@ -194,20 +195,34 @@ export default function Guide() {
           <h3>Settings that matter</h3>
           <p>Everything is in <code>.env</code> (see <code>.env.example</code>). The ones you are most likely to change:</p>
           <ul>
-            <li><code>GROQ_API_KEY</code>: your LLM key. Required.</li>
+            <li><code>LLM_PROVIDER</code>: which service runs the LLM steps, <code>groq</code> (default) or <code>openai</code>. This one line decides; the other provider’s lines are ignored.</li>
+            <li><code>GROQ_API_KEY</code>, <code>GROQ_MODEL</code> or <code>OPENAI_API_KEY</code>, <code>OPENAI_MODEL</code>: the key (required) and model of the provider you use.</li>
+            <li><code>LLM_WORKERS</code>, <code>LLM_MAX_CONCURRENT</code>: how many LLM calls run at once. Keep them equal: 4 for Groq, up to 24 for OpenAI.</li>
             <li><code>COLLECTION</code>: the name of the index. <b>Use a new name</b> whenever you change the embedding model, then ingest again.</li>
             <li><code>DOCUMENT_TTL_DAYS</code>, <code>FLUSH_INTERVAL_HOURS</code>: expiry of new documents.</li>
             <li><code>GRAPH_SEARCH</code>: use the knowledge graph in every search (off by default).</li>
             <li><code>ANSWER_MIN_SCORE</code>: how similar a passage must be to count. Raise it to abstain more often.</li>
           </ul>
+          <h3>Choosing the LLM provider</h3>
+          <p>The LLM writes the Q&amp;A pairs, facts and triplets for every chunk, writes the answers, and checks its own work. You can use either provider. Put the key of the one you want in <code>.env</code>, set <code>LLM_PROVIDER</code>, then restart (<code>./stop.sh</code> and <code>./start.sh</code>); the API reads <code>.env</code> only when it starts.</p>
+          <ul>
+            <li><b>Groq</b> (default): fast per call, but it limits how much text it writes per minute, so more than 4 parallel calls only causes retries. Use <code>LLM_WORKERS=4</code> and <code>LLM_MAX_CONCURRENT=4</code>.</li>
+            <li><b>OpenAI</b>: no such cap at the account level we tested, so it speeds up with more parallel calls. Use up to <code>LLM_WORKERS=24</code> and <code>LLM_MAX_CONCURRENT=24</code>. If you see rate-limit (429) errors, lower them; what your account allows depends on its usage tier.</li>
+          </ul>
+          <p>Measured on 213 chunks of the Constitution, and scaled to the whole document (an estimate, not a promise): OpenAI <code>gpt-4o-mini</code> with 24 calls at once, about 7 minutes; Groq <code>qwen/qwen3.8-27b</code> at its best, about 17 minutes or more. Speed is not quality: both gave similar counts of Q&amp;A pairs, facts and triplets, but how correct they are is what the Quality checks page measures. OpenAI is a paid service; the whole Constitution costs roughly a dollar with <code>gpt-4o-mini</code> (an estimate).</p>
+          <Tip>Switching to a different model means the chunks are enriched again, because the cache is kept per model. Switching back to a model you already used reuses its cached results.</Tip>
+          <p>To time both on your own machine, run <code>uv run python scripts/bench_ingest.py</code> once with each provider set in <code>.env</code>. It enriches the same pages from your PDF in a throwaway index and prints the seconds per chunk. Nothing is written to your real index.</p>
+          <p><code>.env</code> wins over variables already exported in your terminal. A key left in <code>~/.bashrc</code> for another project will not override the one in this project’s <code>.env</code>.</p>
         </section>
 
         <section id="help">
           <h2>Troubleshooting</h2>
           <ul>
             <li><b>“API offline”</b>: the API is not running or still loading its models (the first start downloads them). Wait a minute, then run <code>./start.sh</code> again.</li>
-            <li><b>“GROQ_API_KEY” missing</b>: copy <code>.env.example</code> to <code>.env</code> and put your key in it.</li>
-            <li><b>Ingestion is slow, or some files fail</b>: the LLM provider limits how much text it will write per minute. Run it again; cached work is not repeated.</li>
+            <li><b>The key is missing</b> (“GROQ_API_KEY is not set” or “OPENAI_API_KEY is not set”): copy <code>.env.example</code> to <code>.env</code> and put the key of the provider named in <code>LLM_PROVIDER</code> in it.</li>
+            <li><b>“Invalid API Key” (401)</b>: the key is wrong or was revoked. Create a new one at the provider, put it in <code>.env</code> and restart. Nothing is retried for this error, so it shows at once.</li>
+            <li><b>“model does not exist or you do not have access” (404)</b>: <code>GROQ_MODEL</code> or <code>OPENAI_MODEL</code> names a model your key cannot use. Pick another one and restart. This is also shown at once, without retries.</li>
+            <li><b>Ingestion is slow, or you see rate-limit (429) messages in the API log</b>: the provider limits how much it will write per minute. Run it again (cached work is not repeated), use fewer parallel calls on Groq (4), or switch to OpenAI, which handles more at once.</li>
             <li><b>The Dashboard has no graph retrievers</b>: the graph is built after the first ingest. Use Rebuild on the Knowledge graph page.</li>
             <li><b>Answers say “I couldn’t find this” for something that is in the documents</b>: use words closer to the document, or lower <code>ANSWER_MIN_SCORE</code> a little.</li>
             <li><b>A question is “Not found in any section”</b> on the Questions page: its evidence phrase is not in the current text. Fix the phrase or remove the question.</li>
