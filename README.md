@@ -46,7 +46,7 @@ already exported in the shell, so a key left in `~/.bashrc` cannot override it.
 | **Questions** `/questions` | Manage the labelled evaluation questions: add, edit, delete, train/test, import/export JSON, and see which section each question's evidence is found in. |
 | **Knowledge graph** `/graph` | Search an entity, see it and its neighbours as a network, read its triplets with the source passage of each. |
 | **Quality checks** `/quality` | Grade the answers (faithfulness, relevance, abstention) and check a sample of the generated Q&A pairs and factoids against their source chunks; mark each correct or incorrect and read the error rates. |
-| **User guide** `/guide` | Illustrated usage documentation, with screenshots with a **Download as PDF** button (`frontend/public/user-guide.pdf`; rebuild the images with `scripts/screenshots.sh`, then the PDF with `scripts/guide_pdf.sh`). |
+| **User guide** `/guide` | Illustrated usage documentation, with screenshots with a **Download as PDF** button (`frontend/public/user-guide.pdf`, also copied to `Capstone_User_Guide.pdf` in the project folder; rebuild the images with `scripts/screenshots.sh`, then the PDF with `scripts/guide_pdf.sh`). |
 | **API docs** `/api-docs` | The API reference (also at `:8000/docs`). |
 
 ## What is stored
