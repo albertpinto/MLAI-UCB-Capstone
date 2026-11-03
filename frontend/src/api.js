@@ -43,6 +43,8 @@ export const getBranding = () => request("/branding");
 export const getOpenApi = () => request("/openapi.json");
 
 export const getStats = () => request("/stats");
+export const getAnalysis = () => request("/analysis");
+export const ANALYSIS_NOTEBOOK_URL = "/api/analysis/notebook";
 export const getEvalResults = () => request("/eval/results");
 export const getEvalQuestions = () => request("/eval/questions");
 export const runEval = (retrievers, k, split) => request("/eval/run", json("POST", { retrievers, k, split }));

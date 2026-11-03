@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { BarChart3, Code2, FileText, ListChecks, Network, ShieldCheck, BookOpen, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
+import { BarChart3, Code2, FileText, ListChecks, Network, ShieldCheck, Sigma, BookOpen, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
 import { getBranding, health } from "./api.js";
 import { Logo } from "./components.jsx";
 import Ask from "./pages/Ask.jsx";
@@ -12,12 +12,13 @@ import Quality from "./pages/Quality.jsx";
 import Guide from "./pages/Guide.jsx";
 
 const Graph = lazy(() => import("./pages/Graph.jsx"));
+const Analysis = lazy(() => import("./pages/Analysis.jsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.jsx")); // Plotly is large, so it loads only when the dashboard opens
 
 const GROUPS = [
   { label: "Search", pages: [{ to: "/", label: "Ask", icon: Search }] },
   { label: "Content", pages: [{ to: "/documents", label: "Documents", icon: FileText }] },
-  { label: "Insights", pages: [{ to: "/dashboard", label: "Dashboard", icon: BarChart3 }, { to: "/questions", label: "Questions", icon: ListChecks }, { to: "/graph", label: "Knowledge graph", icon: Network }, { to: "/quality", label: "Quality checks", icon: ShieldCheck }] },
+  { label: "Insights", pages: [{ to: "/dashboard", label: "Dashboard", icon: BarChart3 }, { to: "/analysis", label: "Analysis", icon: Sigma }, { to: "/questions", label: "Questions", icon: ListChecks }, { to: "/graph", label: "Knowledge graph", icon: Network }, { to: "/quality", label: "Quality checks", icon: ShieldCheck }] },
   { label: "Help", pages: [{ to: "/guide", label: "User guide", icon: BookOpen }, { to: "/api-docs", label: "API docs", icon: Code2 }] },
 ];
 const PAGES = GROUPS.flatMap((g) => g.pages);
@@ -121,6 +122,7 @@ export default function App() {
               <Route path="/" element={<Ask />} />
               <Route path="/documents" element={<Documents />} />
               <Route path="/dashboard" element={<Suspense fallback={<p className="hint">Loading…</p>}><Dashboard /></Suspense>} />
+              <Route path="/analysis" element={<Suspense fallback={<p className="hint">Loading…</p>}><Analysis /></Suspense>} />
               <Route path="/graph" element={<Suspense fallback={<p className="hint">Loading…</p>}><Graph /></Suspense>} />
               <Route path="/questions" element={<Questions />} />
               <Route path="/quality" element={<Quality />} />

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Download, Loader2, Play } from "lucide-react";
 import { getEvalQuestions, getEvalResults, getStats, runEval, watchEval } from "../api.js";
-import { Chart, RETRIEVER_COLOUR, SHORT } from "../charts.jsx";
+import { Chart, ChartCard, RETRIEVER_COLOUR, SHORT, Section, Tile } from "../charts.jsx";
 
 const TYPE_LABELS = { chunk: "Chunks", qa_pair: "Q&A pairs", factoid: "Factoids", triplet: "Triplets", topic: "Glossary", summary: "Summaries" };
 const pct = (v) => v.toFixed(3);
@@ -25,35 +25,6 @@ export default function Dashboard() {
       {error && <p className="mb-4 rounded-xl border border-bad/30 bg-bad/10 p-3 text-bad" role="alert">{error}</p>}
       <Evaluation results={results} retrievers={retrievers} onDone={setResults} />
       <IndexStats stats={stats} />
-    </div>
-  );
-}
-
-function Section({ title, hint, children }) {
-  return (
-    <section className="mb-10">
-      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-      {hint && <p className="hint mb-4">{hint}</p>}
-      {children}
-    </section>
-  );
-}
-
-function Tile({ label, value, note }) {
-  return (
-    <div className="card my-0 min-w-0">
-      <p className="hint truncate">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
-      {note && <p className="hint truncate">{note}</p>}
-    </div>
-  );
-}
-
-function ChartCard({ title, children }) {
-  return (
-    <div className="card my-0 min-w-0">
-      <h3 className="mb-1 text-sm font-medium">{title}</h3>
-      {children}
     </div>
   );
 }

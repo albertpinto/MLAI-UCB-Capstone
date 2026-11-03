@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from .config import Settings, get_settings
 from .extract import SUPPORTED
@@ -18,7 +18,7 @@ from .llm import LLM
 from .parsing import parents_from_file
 from . import graph as kg
 from .evaluation import RETRIEVERS, default_reranker, available_retrievers, build_scorers, load_corpus, load_questions, relevant_sections, run_evaluation
-from . import quality
+from . import analysis, quality
 from .schemas import AnswerRun, AskRequest, EvalQuestions, EvalRun, QualityRun, Review, SearchRequest, TextDocument
 from .store import Embedder, Store
 
@@ -272,6 +272,33 @@ def create_app(settings: Settings | None = None, store: Store | None = None, llm
     def stats():
         """Numbers behind the dashboard's index charts: how many points of each type are stored, how many chunks each Part of the document has, and how big the child chunks are (words, in buckets of 10)."""
         return app.state.store.stats()
+
+    analysis_cache: dict = {}
+
+    @app.get("/api/analysis", tags=["Evaluation"], summary="Statistics behind the evaluation", responses={200: {"content": {"application/json": {"example": {
+        "document": "Constitution of India (2024).pdf", "chunks": 2358, "sections": 524, "k": 5, "questions": {"total": 62, "train": 34, "test": 28},
+        "retrievers": [{"id": "bm25", "label": "BM25", "recall": 0.518, "mrr": 0.359, "ndcg": 0.379, "hit": 0.536, "hit_ci": [0.357, 0.714], "mrr_ci": [0.23, 0.5]}],
+        "comparisons": {"test": [{"first": "base", "second": "bm25", "questions": 28, "difference": 0.337, "ci": [0.15, 0.52], "p": 0.003, "p_adjusted": 0.017, "real": True}]},
+        "grid": [{"family": "base_rerank", "config": "depth=20", "params": {"depth": 20}, "questions": 62, "recall": 0.867, "mrr": 0.791, "ndcg": 0.782}],
+        "cross_validation": {"folds": 5, "families": [{"family": "base_rerank", "label": "Base + rerank", "default": {"mrr": 0.774}, "tuned": {"mrr": 0.791}}]}}}}}})
+    def analysis_report():
+        """The statistics behind the retrieval evaluation, computed from what `eval/grid_search.py` saved in `ANALYSIS_DIR`: each retriever on the test questions with 95% bootstrap intervals,
+        paired comparisons with p-values, a grid search of the BM25, hybrid and reranker settings, and cross-validation grouped by Part. Returns 404 until `grid_search.py` has been run.
+        This is the same analysis as `notebooks/capstone_analysis.ipynb`."""
+        results, grid = settings.analysis_dir / "eval_results.json", settings.analysis_dir / "grid_results.csv"
+        if not (results.is_file() and grid.is_file()):
+            raise HTTPException(404, "No analysis data yet. Run: uv run --group eval --group notebook python eval/grid_search.py")
+        key = (results.stat().st_mtime_ns, grid.stat().st_mtime_ns)
+        if analysis_cache.get("key") != key:  # the resampling takes a moment, so it is redone only when the files change
+            analysis_cache.update(key=key, report=analysis.build(results, grid))
+        return analysis_cache["report"]
+
+    @app.get("/api/analysis/notebook", tags=["Evaluation"], summary="Download the analysis notebook", response_class=FileResponse)
+    def analysis_notebook():
+        """The executed Jupyter notebook (`NOTEBOOK_FILE`), with its charts, for download. Returns 404 if the file is missing."""
+        if not settings.notebook_file.is_file():
+            raise HTTPException(404, "The notebook file was not found")
+        return FileResponse(settings.notebook_file, media_type="application/x-ipynb+json", filename=settings.notebook_file.name)
 
     @app.get("/api/eval/questions", tags=["Evaluation"], summary="List labelled questions", responses={200: {"content": {"application/json": {"example": {"questions": [
         {"id": "q-article-21", "question": "Can the government take away my life?", "evidence": ["procedure established by law"], "split": "test", "note": ""}], "retrievers": [{"id": "bm25", "label": "BM25"}]}}}}})

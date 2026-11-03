@@ -22,6 +22,7 @@ const SECTIONS = [
   ["ask", "Ask"],
   ["documents", "Documents"],
   ["dashboard", "Dashboard"],
+  ["analysis", "Analysis"],
   ["questions", "Questions"],
   ["graph", "Knowledge graph"],
   ["quality", "Quality checks"],
@@ -135,7 +136,25 @@ export default function Guide() {
             <li><b>nDCG@k</b>: like MRR but rewards every right section and discounts lower ranks.</li>
           </ul>
           <p>The per-question table shows the rank each retriever gave the right section; misses are highlighted. The index statistics show how many points of each type exist and how big the chunks are.</p>
-          <Tip>With few test questions, a difference of one or two questions is noise. Treat small gaps as ties.</Tip>
+          <Tip>With few test questions, a difference of one or two questions is noise. Treat small gaps as ties. The <Link className="text-accent" to="/analysis">Analysis</Link> page shows which differences are real.</Tip>
+        </section>
+
+        <section id="analysis">
+          <h2>Analysis</h2>
+          <Shot file="analysis.png" alt="The Analysis page with confidence-interval charts of each search method and a table of their scores" />
+          <p>The Dashboard gives one number per search method. With a few dozen questions, one number can be luck, so this page shows <b>how sure we can be</b>: confidence intervals, tests of whether a difference is real, a grid search of the settings and cross-validation. It is the same analysis as the Jupyter notebook, built into the app. The <b>Download the notebook</b> button saves the notebook itself, with its charts and written findings.</p>
+          <h3>How to read it</h3>
+          <ul>
+            <li><b>Search methods on the test questions.</b> Each bar is a score and the thin line on it is the 95% confidence interval: the range the true score probably lies in. <b>When two intervals overlap, the methods cannot be told apart</b> with these questions. <i>Hit@5</i> counts a question as answered if a right section is in the top 5; <i>Recall@5</i> counts the share of right sections found, so the two differ slightly for questions with several right sections. The last column is how often the right section is the very first result.</li>
+            <li><b>Are the differences real?</b> Two methods are compared on the same questions. <span className="rounded-full bg-ok/15 px-2 py-0.5 text-xs font-medium text-ok">real gap</span> means the 95% interval of the difference excludes zero. <span className="rounded-full bg-line px-2 py-0.5 text-xs font-medium text-muted">not shown</span> does <b>not</b> mean “no difference”: it means these questions are too few to tell. The p-value is adjusted for making several comparisons, which makes a lucky result harder to claim. The fine-tuned model is compared on the test questions only, because it was trained on the others.</li>
+            <li><b>Grid search.</b> Three methods have settings nobody can know in advance: BM25&rsquo;s <code>k1</code> and <code>b</code>, the hybrid&rsquo;s fusion constant, and how many top results the reranker re-scores. Every setting was scored on every question. Flat lines mean the setting hardly matters.</li>
+            <li><b>Cross-validation by Part.</b> Choosing the best setting and reporting its score on the same questions is optimistic. Here the questions are split so that all questions of one Part stay together; the best setting is chosen on the other folds and scored on the held-out one. Compare the <b>gain</b> from tuning with the spread between folds in the last table: a gain smaller than that spread is easily luck.</li>
+          </ul>
+          <h3>Where the numbers come from</h3>
+          <p>The page reads two files written by <code>eval/grid_search.py</code> (in <code>notebooks/data/</code>) and shows when they were written. Run it again after you re-ingest, or change the questions or the index; it needs Qdrant running with the documents ingested and takes about four minutes:</p>
+          <pre className="my-3 overflow-x-auto rounded-xl border border-line bg-soft px-4 py-3 text-sm"><code>uv run --group eval --group notebook python eval/grid_search.py</code></pre>
+          <p>To open the notebook itself: <code>uv run --group notebook jupyter lab notebooks/capstone_analysis.ipynb</code>. The page and the notebook give the same numbers; the intervals can differ in the third decimal because resampling is random.</p>
+          <Tip>If the page says “No analysis data yet”, run the command above once and reload.</Tip>
         </section>
 
         <section id="questions">
@@ -223,6 +242,7 @@ export default function Guide() {
             <li><b>“Invalid API Key” (401)</b>: the key is wrong or was revoked. Create a new one at the provider, put it in <code>.env</code> and restart. Nothing is retried for this error, so it shows at once.</li>
             <li><b>“model does not exist or you do not have access” (404)</b>: <code>GROQ_MODEL</code> or <code>OPENAI_MODEL</code> names a model your key cannot use. Pick another one and restart. This is also shown at once, without retries.</li>
             <li><b>Ingestion is slow, or you see rate-limit (429) messages in the API log</b>: the provider limits how much it will write per minute. Run it again (cached work is not repeated), use fewer parallel calls on Groq (4), or switch to OpenAI, which handles more at once.</li>
+            <li><b>The Analysis page says “No analysis data yet”</b>: run <code>uv run --group eval --group notebook python eval/grid_search.py</code> (Qdrant running, documents ingested), then reload.</li>
             <li><b>The Dashboard has no graph retrievers</b>: the graph is built after the first ingest. Use Rebuild on the Knowledge graph page.</li>
             <li><b>Answers say “I couldn’t find this” for something that is in the documents</b>: use words closer to the document, or lower <code>ANSWER_MIN_SCORE</code> a little.</li>
             <li><b>A question is “Not found in any section”</b> on the Questions page: its evidence phrase is not in the current text. Fix the phrase or remove the question.</li>

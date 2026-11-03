@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     llm_workers: int = 4
 
     eval_questions_file: Path = Path("eval/questions.json")  # labelled questions for the retrieval evaluation
+    analysis_dir: Path = Path("notebooks/data")  # eval/grid_search.py writes eval_results.json and grid_results.csv here, for the Analysis page and the notebook
+    notebook_file: Path = Path("notebooks/capstone_analysis.ipynb")  # offered for download on the Analysis page
     eval_results_file: Path = Path("eval/results.json")  # the last evaluation run, so the dashboard opens instantly
     eval_unanswerable_file: Path = Path("eval/unanswerable.json")  # JSON list of questions the documents cannot answer; the answer evaluation checks the system abstains
     quality_file: Path = Path("data/quality.json")  # the last artifact check (with a person's reviews) and answer evaluation

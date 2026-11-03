@@ -10,7 +10,7 @@ dense search followed by a cross-encoder reranker. On 28 held-out test questions
 91% to 96% of questions (Recall@5 0.911 to 0.964, MRR about 0.78)**, against 52% for BM25 keyword search (Recall@5 0.518, MRR 0.359); that gap is statistically clear. Fine-tuning the embedding model,
 hybrid BM25 + dense search and the knowledge graph showed no benefit over the simple base model with a reranker on this corpus. It is a FastAPI + React app that runs locally; Groq or OpenAI supplies the LLM.
 
-**The data analysis is in the notebook: [notebooks/capstone_analysis.ipynb](notebooks/capstone_analysis.ipynb)** (pandas, seaborn, bootstrap confidence intervals, a grid search and cross-validation grouped by Part).
+**The data analysis is in the notebook: [notebooks/capstone_analysis.ipynb](notebooks/capstone_analysis.ipynb)** (pandas, seaborn, bootstrap confidence intervals, a grid search and cross-validation grouped by Part). The same analysis is built into the app as the **Analysis** page (`/analysis`).
 
 #### Rationale
 
@@ -108,7 +108,7 @@ uv run python eval/eval.py --k 5 --split test      # the same code as the Dashbo
 re-ingest. The **Questions** page edits this file; a question whose evidence matches no section is flagged, because an evaluation leaves it out.
 
 The statistical analysis lives in [the notebook](notebooks/capstone_analysis.ipynb): bootstrap confidence intervals and paired tests for every comparison, a **grid search** of BM25 (`k1`, `b`), the hybrid's fusion
-constant and the reranker's depth, and **5-fold cross-validation grouped by Part**, so a setting is never tuned on a Part it is judged on. The metrics (Recall@5, MRR, nDCG@5) and why they fit this problem are explained there.
+constant and the reranker's depth, and **5-fold cross-validation grouped by Part**, so a setting is never tuned on a Part it is judged on. The metrics (Recall@5, MRR, nDCG@5) and why they fit this problem are explained there. The app's **Analysis** page (`/analysis`, backed by `GET /api/analysis` and `src/capstone/analysis.py`) shows the same statistics from the files `eval/grid_search.py` writes, and offers the notebook for download (`GET /api/analysis/notebook`); a test checks that it reproduces the notebook's numbers.
 ```bash
 uv run --group eval --group notebook python eval/grid_search.py     # scores every setting on every question (about 4 minutes), writes notebooks/data/
 uv run --group notebook jupyter lab notebooks/capstone_analysis.ipynb
@@ -196,11 +196,11 @@ Seventh), one dropped half of "Union or State Commission", and two Q&A flags are
 
 - [**Analysis notebook**](notebooks/capstone_analysis.ipynb) (executed, with charts) and its data in [`notebooks/data/`](notebooks/data): business understanding, data cleaning, descriptive statistics, the retriever comparison, confidence intervals and tests, the grid search with grouped cross-validation, and findings with recommendations for a non-technical reader
 - [User guide (PDF)](Capstone_User_Guide.pdf) and [startup steps (PDF)](Capstone_Startup_Steps.pdf) / [PowerPoint](Capstone_Startup_Steps.pptx)
-- [`src/capstone/`](src/capstone): the app. `config` · `extract` · `chunking` · `parsing` (Docling parents, Chonkie children) · `enrich` (LLM per chunk) · `llm` (Groq or OpenAI) · `ingest` · `store` · `graph` (knowledge graph) · `answer` (grounded answer) · `quality` · `export_index` · `evaluation` · `finetune` · `schemas` · `main` (API)
+- [`src/capstone/`](src/capstone): the app. `config` · `extract` · `chunking` · `parsing` (Docling parents, Chonkie children) · `enrich` (LLM per chunk) · `llm` (Groq or OpenAI) · `ingest` · `store` · `graph` (knowledge graph) · `answer` (grounded answer) · `quality` · `analysis` (confidence intervals, tests, cross-validation) · `export_index` · `evaluation` · `finetune` · `schemas` · `main` (API)
 - [`eval/`](eval): command-line evaluation, grid search and fine-tuning (`eval.py`, `grid_search.py`, `finetune.py`), the labelled questions (`questions.json`, `unanswerable.json`)
-- [`frontend/src/pages/`](frontend/src/pages): Ask, Documents, Dashboard, Questions, Graph, Quality, Guide, ApiDocs, Passage
+- [`frontend/src/pages/`](frontend/src/pages): Ask, Documents, Dashboard, Analysis, Questions, Graph, Quality, Guide, ApiDocs, Passage
 - [`scripts/`](scripts): `bench_ingest.py` (time the LLM providers), `screenshots.sh` and `guide_pdf.sh` (rebuild the user guide), `check_llm_key.py` (used by the start scripts)
-- [`tests/`](tests): `uv run pytest` (89 tests; fakes for embeddings, reranker and LLM, in-memory Qdrant: no network, no model download). Frontend: `cd frontend && npm run build`.
+- [`tests/`](tests): `uv run pytest` (95 tests; fakes for embeddings, reranker and LLM, in-memory Qdrant: no network, no model download). Frontend: `cd frontend && npm run build`.
 
 ##### Run it
 
@@ -228,6 +228,7 @@ output-token rate limit is the bottleneck), and the Documents page shows live pr
 | **Ask** `/` | Ask a question; filter by result type; optional **Knowledge graph** toggle. Grounded answer with citations, source cards linking to the full passage, "via graph" tags on passages the graph contributed. |
 | **Documents** `/documents` | Upload files, paste text, ingest `DOCS_DIR`, list and delete documents, with live ingestion progress. Re-ingesting identical text is skipped. |
 | **Dashboard** `/dashboard` | Run the retrieval evaluation and chart it (Plotly): Recall@k, MRR, nDCG@k per retriever, Recall-vs-k curve, per-question ranks with CSV export, index statistics. |
+| **Analysis** `/analysis` | How sure we can be of the Dashboard numbers: 95% confidence intervals per retriever, paired comparisons with adjusted p-values ("real gap" or "not shown"), the grid search of the BM25, hybrid and reranker settings, and cross-validation by Part. Reads the files of `eval/grid_search.py`; **Download the notebook** button. |
 | **Questions** `/questions` | Manage the labelled evaluation questions: add, edit, delete, train/test, import/export JSON, and see which section each question's evidence is found in. |
 | **Knowledge graph** `/graph` | Search an entity, see it and its neighbours as a network, read its triplets with the source passage of each. |
 | **Quality checks** `/quality` | Grade the answers (faithfulness, relevance, abstention) and check a sample of the generated Q&A pairs and factoids against their source chunks; mark each correct or incorrect and read the error rates. |

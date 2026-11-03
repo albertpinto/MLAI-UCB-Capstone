@@ -52,3 +52,33 @@ export function Chart({ data, layout, height = 320, label, onClick }) {
     </div>
   );
 }
+
+// Page furniture shared by the Dashboard and the Analysis page.
+export function Section({ title, hint, children }) {
+  return (
+    <section className="mb-10">
+      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      {hint && <p className="hint mb-4">{hint}</p>}
+      {children}
+    </section>
+  );
+}
+
+export function Tile({ label, value, note }) {
+  return (
+    <div className="card my-0 min-w-0">
+      <p className="hint truncate">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
+      {note && <p className="hint truncate">{note}</p>}
+    </div>
+  );
+}
+
+export function ChartCard({ title, children }) {
+  return (
+    <div className="card my-0 min-w-0">
+      <h3 className="mb-1 text-sm font-medium">{title}</h3>
+      {children}
+    </div>
+  );
+}
