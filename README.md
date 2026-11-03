@@ -7,8 +7,10 @@
 Ask a question in everyday words and get a short, cited answer from your own documents, or an explicit "I couldn't find this" when the documents do not say.
 The system splits documents into parent sections and small child chunks, has an LLM add Q&A pairs, facts and a knowledge graph, stores everything in Qdrant, and answers with a
 dense search followed by a cross-encoder reranker. On 28 held-out test questions about the Constitution of India (k = 5), **dense search plus reranking found the right section for
-96% of questions (Recall@5 0.964, MRR 0.798)**, against 48% for BM25 keyword search (Recall@5 0.482, MRR 0.348). Fine-tuning the embedding model, hybrid BM25 + dense search and the
-knowledge graph did not beat the simple base model with a reranker on this corpus. It is a FastAPI + React app that runs locally; Groq or OpenAI supplies the LLM.
+91% to 96% of questions (Recall@5 0.911 to 0.964, MRR about 0.78)**, against 52% for BM25 keyword search (Recall@5 0.518, MRR 0.359); that gap is statistically clear. Fine-tuning the embedding model,
+hybrid BM25 + dense search and the knowledge graph showed no benefit over the simple base model with a reranker on this corpus. It is a FastAPI + React app that runs locally; Groq or OpenAI supplies the LLM.
+
+**The data analysis is in the notebook: [notebooks/capstone_analysis.ipynb](notebooks/capstone_analysis.ipynb)** (pandas, seaborn, bootstrap confidence intervals, a grid search and cross-validation grouped by Part).
 
 #### Rationale
 
@@ -28,7 +30,7 @@ Sub-questions, each measured against the same labelled questions:
 
 #### Data Sources
 
-- **Corpus:** the Constitution of India (2024), a 402-page PDF in `data/docs/` (the one data file kept in git, with a sample résumé `.docx`). Any `pdf`, `docx` or `txt` can be ingested. Ingested as 2,358 child chunks in 524 sections.
+- **Corpus:** the Constitution of India (2024), a 402-page PDF in `data/docs/` (the one data file kept in git). Any `pdf`, `docx` or `txt` can be ingested. Ingested as 2,358 child chunks in 524 sections.
 - **Derived data**, made by an LLM per chunk and stored as typed points: resolved chunk text (references such as "It" replaced by the name), Q&A pairs, factoids, knowledge-graph triplets (5,416 relations over 5,212 entities), plus a glossary and a summary per document.
 - **Labelled evaluation set:** `eval/questions.json`, 62 questions each with an `evidence` phrase copied from the answering passage and a `split` (train or test, divided by Part of the Constitution so fine-tuning cannot leak). 28 are test questions. `eval/unanswerable.json` has 8 off-topic questions that should be refused.
 - **Data challenges, handled explicitly:** one long document with many overlapping topics; LLM-generated content that can be wrong (every item is checked, see Methodology); noise from PDF extraction (running headers, footnotes); and questions drafted by reading the text, so the evaluation is not independent (see Next steps).
@@ -105,6 +107,13 @@ uv run python eval/eval.py --k 5 --split test      # the same code as the Dashbo
 `eval/questions.json` holds the labelled questions (`id`, `question`, `evidence[]`, `split`, `note`). Evidence phrases survive a re-chunk or
 re-ingest. The **Questions** page edits this file; a question whose evidence matches no section is flagged, because an evaluation leaves it out.
 
+The statistical analysis lives in [the notebook](notebooks/capstone_analysis.ipynb): bootstrap confidence intervals and paired tests for every comparison, a **grid search** of BM25 (`k1`, `b`), the hybrid's fusion
+constant and the reranker's depth, and **5-fold cross-validation grouped by Part**, so a setting is never tuned on a Part it is judged on. The metrics (Recall@5, MRR, nDCG@5) and why they fit this problem are explained there.
+```bash
+uv run --group eval --group notebook python eval/grid_search.py     # scores every setting on every question (about 4 minutes), writes notebooks/data/
+uv run --group notebook jupyter lab notebooks/capstone_analysis.ipynb
+```
+
 ##### Fine-tuning the embedding model (CPU is enough for MiniLM)
 
 ```bash
@@ -144,29 +153,27 @@ nothing is flushed while the API is stopped. The document summary and glossary a
 
 #### Results
 
-Latest run on the **28 held-out test questions** (k = 5; `COLLECTION=constitution_india_v2`, 2,358 chunks, 524 sections):
+Latest run on the **28 held-out test questions** (k = 5; `COLLECTION=constitution_india_v2`, searching the Constitution's 2,358 chunks in 524 sections; the index was re-ingested since the first version of this table, so the numbers moved slightly):
 
 | Retriever | Recall@5 | MRR | nDCG@5 |
 |---|---|---|---|
-| BM25 | 0.482 | 0.348 | 0.358 |
-| Base MiniLM (un-tuned) | 0.893 | 0.701 | 0.731 |
-| Fine-tuned MiniLM | 0.839 | 0.619 | 0.650 |
-| Hybrid (BM25 + dense) | 0.714 | 0.559 | 0.568 |
-| Hybrid + rerank | 0.929 | 0.766 | 0.801 |
-| **Base + rerank** (what Ask uses) | **0.964** | **0.798** | **0.836** |
-| Base + knowledge graph | 0.893 | 0.701 | 0.732 |
-| Base + knowledge graph + rerank | 0.964 | 0.798 | 0.836 |
+| BM25 | 0.518 | 0.359 | 0.379 |
+| Base MiniLM (un-tuned) | 0.875 | 0.696 | 0.720 |
+| Fine-tuned MiniLM | 0.911 | 0.644 | 0.696 |
+| Hybrid (BM25 + dense) | 0.786 | 0.562 | 0.592 |
+| Hybrid + rerank | **0.964** | 0.771 | **0.815** |
+| **Base + rerank** (what Ask uses) | 0.911 | **0.780** | 0.795 |
+| Base + knowledge graph | 0.875 | 0.681 | 0.711 |
+| Base + knowledge graph + rerank | 0.911 | 0.777 | 0.792 |
 
-What this shows, and what it does not:
-- **Dense + cross-encoder rerank is best.** BM25 is weak because users do not use the documents' words.
-- **Fine-tuning did not beat the base model** here (two settings tried). The training questions are LLM-generated from the same text,
-  and the base model is already strong on this corpus.
-- **Hybrid RRF hurt**: BM25's weak ranking dilutes the dense one.
-- **The knowledge graph is neutral.** At full fusion weight it hurt badly (Recall@5 0.554 without rerank); the weight was swept on the
-  *train* questions only and set to 0.1, where it neither helps nor hurts. So `GRAPH_SEARCH` is off by default. The graph is as good as the LLM's triplets: many entities are noisy phrases
-  ("both Houses assembled together"), and it is sparse (5,212 entities for 5,416 relations), which is part of why it adds nothing to retrieval here. It is useful for exploring the corpus.
-- **Caveats:** only 28 test questions, so differences of one or two questions are noise; all 62 questions were drafted by reading the text,
-  so they are not an independent evaluation; the rerank depth (30) came from a small sweep.
+What this shows, and what it does not (confidence intervals, tests and cross-validation are in [the notebook](notebooks/capstone_analysis.ipynb)):
+- **Meaning-based search beats keyword search, and the gap is real.** BM25 answers 15 of 28 questions in its top 5; the base model 25, and the rerank pipelines 26 to 27. The paired bootstrap interval for the MRR gain over BM25 excludes 0 (+0.34 for the base model, +0.42 with rerank), on the test questions and on all 62.
+- **Reranking puts the right section first more often** (68% of questions against 57% for the base model), but with 28 questions the MRR gain (+0.08) is **not statistically shown** (95% interval -0.07 to 0.25). About 200 independent questions would be needed to confirm a gap that size.
+- **Fine-tuning showed no benefit.** Recall@5 is one question higher (0.911 against 0.875) but MRR is lower (0.644 against 0.696); the difference is within the noise. The training questions are LLM-generated from the same text, and the base model is already strong on this corpus.
+- **Hybrid RRF hurt**: BM25's weak ranking dilutes the dense one. Not shown on the 28 test questions, but clear on all 62 (MRR -0.14, interval -0.24 to -0.05).
+- **The knowledge graph is neutral** (MRR 0.681 against 0.696, within the noise). In an earlier run, at full fusion weight it hurt badly (Recall@5 0.554 without rerank); the weight was swept on the *train* questions only and set to 0.1. So `GRAPH_SEARCH` is off by default.
+- **Settings barely matter.** In a grid search with cross-validation grouped by Part, tuned BM25 settings, the fusion constant and the rerank depth (20 against the default 30) each moved MRR by less than 0.03, and no gain was statistically shown.
+- **Caveats:** only 28 test questions, so differences of one or two questions are noise; all 62 questions were drafted by reading the text, so they are not an independent evaluation.
 
 **Answer quality** (28 test questions, 8 off-topic, Groq `llama-3.3-70b-versatile` as writer **and** judge): faithfulness 100%, relevance 100%, wrongly abstained 0%, correctly abstained 100%.
 A judge from the same model family tends to be lenient, so read this as an upper bound.
@@ -177,7 +184,7 @@ Seventh), one dropped half of "Union or State Commission", and two Q&A flags are
 
 #### Next steps
 
-- An independent, human-written question set, and a larger test set: all 62 questions were drafted by reading the text, so the evaluation is not independent. This is the most important gap.
+- An independent, human-written question set, and a larger test set (about 200 questions to confirm a re-ranking gain of 0.08): all 62 questions were drafted by reading the text, so the evaluation is not independent. This is the most important gap.
 - A person's review of 50 to 100 generated Q&A pairs and factoids, so the error rate reported is a human one (the page is built).
 - Compare the quality of OpenAI's and Groq's output (only speed has been compared), and rerun the quality checks with a judge from a different model family than the writer.
 - An ablation of the derived artifacts (chunks only against chunks plus Q&A, glossary, summary and factoids) and graph variants for BM25, hybrid and fine-tuned (only the base and base + rerank pipelines have graph twins).
@@ -187,12 +194,13 @@ Seventh), one dropped half of "Union or State Commission", and two Q&A flags are
 
 #### Outline of project
 
+- [**Analysis notebook**](notebooks/capstone_analysis.ipynb) (executed, with charts) and its data in [`notebooks/data/`](notebooks/data): business understanding, data cleaning, descriptive statistics, the retriever comparison, confidence intervals and tests, the grid search with grouped cross-validation, and findings with recommendations for a non-technical reader
 - [User guide (PDF)](Capstone_User_Guide.pdf) and [startup steps (PDF)](Capstone_Startup_Steps.pdf) / [PowerPoint](Capstone_Startup_Steps.pptx)
 - [`src/capstone/`](src/capstone): the app. `config` · `extract` · `chunking` · `parsing` (Docling parents, Chonkie children) · `enrich` (LLM per chunk) · `llm` (Groq or OpenAI) · `ingest` · `store` · `graph` (knowledge graph) · `answer` (grounded answer) · `quality` · `export_index` · `evaluation` · `finetune` · `schemas` · `main` (API)
-- [`eval/`](eval): command-line evaluation and fine-tuning (`eval.py`, `finetune.py`), the labelled questions (`questions.json`, `unanswerable.json`)
+- [`eval/`](eval): command-line evaluation, grid search and fine-tuning (`eval.py`, `grid_search.py`, `finetune.py`), the labelled questions (`questions.json`, `unanswerable.json`)
 - [`frontend/src/pages/`](frontend/src/pages): Ask, Documents, Dashboard, Questions, Graph, Quality, Guide, ApiDocs, Passage
 - [`scripts/`](scripts): `bench_ingest.py` (time the LLM providers), `screenshots.sh` and `guide_pdf.sh` (rebuild the user guide), `check_llm_key.py` (used by the start scripts)
-- [`tests/`](tests): `uv run pytest` (88 tests; fakes for embeddings, reranker and LLM, in-memory Qdrant: no network, no model download). Frontend: `cd frontend && npm run build`.
+- [`tests/`](tests): `uv run pytest` (89 tests; fakes for embeddings, reranker and LLM, in-memory Qdrant: no network, no model download). Frontend: `cd frontend && npm run build`.
 
 ##### Run it
 

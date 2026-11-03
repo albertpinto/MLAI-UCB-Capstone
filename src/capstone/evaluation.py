@@ -35,6 +35,13 @@ class Corpus:
     ids: list[tuple[str, int]] = field(default_factory=list)  # (document_id, chunk_id) per chunk, to find the chunks the graph points at
 
 
+def corpus_of(corpus: Corpus, document_ids: set[str]) -> Corpus:
+    """Only the chunks and sections of the given documents, so another document in the same index does not act as a distractor."""
+    keep = [i for i, (document_id, _) in enumerate(corpus.ids) if document_id in document_ids]
+    keys = [corpus.keys[i] for i in keep]
+    return Corpus([corpus.texts[i] for i in keep], keys, {k: corpus.sections[k] for k in dict.fromkeys(keys)}, [corpus.ids[i] for i in keep])
+
+
 def normalise(text: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
 
